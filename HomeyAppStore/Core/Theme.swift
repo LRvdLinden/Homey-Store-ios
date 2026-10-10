@@ -13,8 +13,8 @@ enum Theme {
     static let testOrange = Color(light: 0xF57C00, dark: 0xFF9F0A)
 
     static let homeyGradient = LinearGradient(
-        colors: [Color(hex: "#2BC8F7")!, Color(hex: "#1A5CFF")!],
-        startPoint: .top, endPoint: .bottom
+        colors: [Color(hex: "#005CD5")!, Color(hex: "#52DEFF")!],
+        startPoint: .bottomLeading, endPoint: .topTrailing
     )
 }
 
@@ -67,29 +67,6 @@ struct HomeyLogo: View {
 
     private var image: some View {
         Image(asset).resizable().scaledToFit().frame(width: size, height: size).accessibilityLabel("Homey")
-    }
-}
-
-/// Blue blueprint background used by the splash and login screens.
-struct BlueprintBackground: View {
-    var body: some View {
-        GeometryReader { geo in
-            let w = geo.size.width, h = geo.size.height
-            ZStack {
-                LinearGradient(colors: [Color(red: 0.17, green: 0.78, blue: 0.97), Color(red: 0.10, green: 0.36, blue: 1)],
-                               startPoint: .top, endPoint: .bottom)
-                Path { p in
-                    let step: CGFloat = 44
-                    var x: CGFloat = 0
-                    while x < w { p.move(to: .init(x: x, y: 0)); p.addLine(to: .init(x: x, y: h)); x += step }
-                    var y: CGFloat = 0
-                    while y < h { p.move(to: .init(x: 0, y: y)); p.addLine(to: .init(x: w, y: y)); y += step }
-                }
-                .stroke(.white.opacity(0.08), lineWidth: 1)
-                Circle().stroke(.white.opacity(0.12), lineWidth: 1).frame(width: w * 0.9).position(x: w / 2, y: h * 0.42)
-                Circle().stroke(.white.opacity(0.10), lineWidth: 1).frame(width: w * 1.4).position(x: w / 2, y: h * 0.42)
-            }
-        }
     }
 }
 

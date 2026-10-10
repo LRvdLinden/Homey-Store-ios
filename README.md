@@ -24,7 +24,7 @@
 
 <table>
   <tr>
-    <td align="center"><img src="docs/screenshots/splash.png" width="230" alt="Splashscreen"><br><sub><b>Splashscreen</b></sub></td>
+    <td align="center"><img src="docs/screenshots/splash.png" width="230" alt="Splashscreen"><br><sub><b>Splashscreen (Homey Pro)</b></sub></td>
     <td align="center"><img src="docs/screenshots/today.png" width="230" alt="Vandaag"><br><sub><b>Vandaag</b></sub></td>
     <td align="center"><img src="docs/screenshots/apps.png" width="230" alt="Apps"><br><sub><b>Apps</b></sub></td>
   </tr>
@@ -35,7 +35,7 @@
   </tr>
   <tr>
     <td align="center"><img src="docs/screenshots/search.png" width="230" alt="Zoeken"><br><sub><b>Zoeken</b></sub></td>
-    <td></td>
+    <td align="center"><img src="docs/screenshots/splash-cloud.png" width="230" alt="Splashscreen Homey Cloud"><br><sub><b>Splashscreen (Homey Cloud)</b></sub></td>
     <td></td>
   </tr>
 </table>
@@ -46,7 +46,7 @@
 
 | | |
 |:--|:--|
-| **Splash screen** | Animated launch (Homey ring on the blue blueprint background) while the store front preloads. |
+| **Splash screen** | In the style of the Homey App Store on homey.app: the store gradient (blue for Homey Pro, pink for Homey Cloud) with drifting frosted shapes, the app mark and a curved panel with the store choice, while the store front preloads. |
 | **Two stores** | Switch between **Homey Pro** (Pro, Pro mini, Self-Hosted Server) and **Homey Cloud** from the menu top-left — same as the tabs on homey.app/apps. |
 | **Vandaag** | Editorial cards like the App Store Today tab: popular, new, just updated, energy, security. |
 | **Apps** | Swipeable feature cards, ranked shelves (popular, new, updated, top per category) and all categories. |
@@ -56,6 +56,10 @@
 | **Test versions** | Apps with a test build show an orange banner and a *Testversie* section; install the test or share the test link. |
 | **Mijn Homey** | Apps installed on your Homey with available updates (*Werk alles bij*), test installs and CLI dev installs. |
 | **Accounts** | Log in like Homey Dev (Homey login or Personal Access Token), multiple saved accounts, quick switching, sign out. |
+
+## Design
+
+The app icon and splash take their cue from the Homey App Store header on homey.app: the 60° store gradient (`#005CD5 → #52DEFF` for Homey Pro, `#C70076 → #FC6767` for Homey Cloud) with frosted triangle, circle and rounded-square shapes. The icon uses the three shapes as the app's own mark — no Homey logo.
 
 ## How it works
 

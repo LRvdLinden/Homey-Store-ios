@@ -4,7 +4,8 @@
 
 First version.
 
-- Animated splash screen with store preload.
+- New app icon (frosted triangle, circle and square on the store gradient, no Homey logo).
+- Splash screen and login in the style of the Homey App Store on homey.app; colours follow the chosen store (Pro blue / Cloud pink).
 - App Store–style tabs: **Vandaag**, **Apps**, **Mijn Homey**, **Zoeken**.
 - Switch between the **Homey Pro** and **Homey Cloud** store.
 - App detail page: info strip, What's New, version history, preview, description, works-with, information and links.

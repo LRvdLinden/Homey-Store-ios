@@ -1,7 +1,7 @@
 import SwiftUI
 import WebKit
 
-/// Welcome screen (blue blueprint background, app icon, white button).
+/// Welcome screen (store gradient with frosted shapes, app icon, white button).
 /// Also reused as "Account toevoegen". Optional: you can browse the store without
 /// logging in; logging in is needed to install on a Homey.
 struct LoginView: View {
@@ -21,7 +21,7 @@ struct LoginView: View {
 
     var body: some View {
         ZStack {
-            BlueprintBackground().ignoresSafeArea()
+            StoreBackdrop(platform: .saved)
 
             VStack(spacing: 28) {
                 if isAddingAccount || allowClose {
@@ -308,15 +308,3 @@ struct PATLoginSheet: View {
 }
 
 
-/// The app's own logo: Homey ring on the blue gradient (same as the app icon).
-struct StoreLogoTile: View {
-    var size: CGFloat = 60
-    var body: some View {
-        ZStack {
-            Theme.homeyGradient
-            HomeyLogo(size: size * 0.6, asset: "HomeyGlyph")
-        }
-        .frame(width: size, height: size)
-        .clipShape(RoundedRectangle(cornerRadius: size * 0.225, style: .continuous))
-    }
-}
