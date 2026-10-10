@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.0.1 (build 0.0.3) — 2026-10-10
+
+- **Mijn Homeys** now show the real product images, the same as my.homey.app (Homey Pro, Pro mini, Cloud, Self-Hosted Server; light and dark), with the model as subtitle ("Homey Pro (Early 2023)").
+- Homey images also in the install sheet, on Mijn Homey and next to the target Homey on the app page.
+- App icons load more reliably: rendered on one fixed page, waiting until the SVG is decoded, with retry and timeout; fall back to the app photo.
+- Private and CLI-installed apps get the icon served by your Homey.
+- App photos and Homey images are cached (memory + disk).
+
 ## 0.0.1 (build 0.0.2) — 2026-10-10
 
 - New app icon: frosted triangle, circle and rounded square on the store gradient — no Homey logo.

@@ -73,7 +73,7 @@ struct AppDetailView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .principal) {
-                StoreAppIcon(url: app.iconURL ?? build?.iconURL, brandColor: brandColor, name: app.name, size: 28)
+                StoreAppIcon(url: app.iconURL ?? build?.iconURL, brandColor: brandColor, name: app.name, size: 28, fallbackURL: build?.imageSmallURL ?? app.smallImageURL)
             }
             ToolbarItem(placement: .topBarTrailing) {
                 ShareLink(item: Config.storePage(app.id)) { Image(systemName: "square.and.arrow.up") }
@@ -105,7 +105,7 @@ struct AppDetailView: View {
 
     private var header: some View {
         HStack(alignment: .top, spacing: 16) {
-            StoreAppIcon(url: app.iconURL ?? build?.iconURL, brandColor: brandColor, name: app.name, size: 118)
+            StoreAppIcon(url: app.iconURL ?? build?.iconURL, brandColor: brandColor, name: app.name, size: 118, fallbackURL: build?.imageSmallURL ?? app.smallImageURL)
             VStack(alignment: .leading, spacing: 4) {
                 Text(detail?.name ?? app.name).font(.title2.weight(.bold)).lineLimit(2)
                 Text(detail?.subtitle.isEmpty == false ? detail!.subtitle : app.description)
@@ -129,7 +129,7 @@ struct AppDetailView: View {
         if auth.isLoggedIn {
             if let target {
                 HStack(spacing: 4) {
-                    Image(systemName: target.isCloud ? "cloud" : "cube")
+                    HomeyImage(homey: target, size: 16)
                     Text(target.name).lineLimit(1)
                     if let installed { Text("· v\(installed.version)") }
                 }

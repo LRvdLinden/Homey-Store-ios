@@ -91,7 +91,7 @@ struct AppRow: View {
         HStack(spacing: 12) {
             NavigationLink(value: app) {
                 HStack(spacing: 12) {
-                    StoreAppIcon(url: app.iconURL, brandColor: app.brandColor, name: app.name, size: iconSize)
+                    StoreAppIcon(url: app.iconURL, brandColor: app.brandColor, name: app.name, size: iconSize, fallbackURL: app.smallImageURL)
                     if let rank {
                         Text("\(rank)").font(.title3.weight(.semibold)).foregroundStyle(.primary)
                             .frame(minWidth: 18)
@@ -204,7 +204,7 @@ struct FeatureCard: View {
                 HStack(spacing: 10) {
                     NavigationLink(value: app) {
                         HStack(spacing: 10) {
-                            StoreAppIcon(url: app.iconURL, brandColor: app.brandColor, name: app.name, size: 44)
+                            StoreAppIcon(url: app.iconURL, brandColor: app.brandColor, name: app.name, size: 44, fallbackURL: app.smallImageURL)
                             VStack(alignment: .leading, spacing: 1) {
                                 Text(app.name).font(.subheadline.weight(.semibold)).foregroundStyle(.white)
                                 Text(app.authorName).font(.caption).foregroundStyle(.white.opacity(0.8))
@@ -235,9 +235,7 @@ struct PromoImage: View {
             .fill(Color(hex: brandColor)?.gradient ?? Theme.accent.gradient)
             .overlay {
                 if let url {
-                    AsyncImage(url: url, transaction: Transaction(animation: .easeOut(duration: 0.25))) { phase in
-                        if case .success(let img) = phase { img.resizable().scaledToFill() }
-                    }
+                    RemoteImage(url: url, contentMode: .fill) { Color.clear }
                 }
             }
             .clipped()

@@ -12,6 +12,14 @@ struct StoreApp: Identifiable, Hashable, Sendable {
     let authorVerified: Bool
     let platforms: [String]
 
+    /// Small version of the app photo (`…/images/small.*`), lighter for icon fallbacks.
+    var smallImageURL: URL? {
+        guard let imageURL else { return nil }
+        let s = imageURL.absoluteString
+        guard s.contains("/images/large.") else { return imageURL }
+        return URL(string: s.replacingOccurrences(of: "/images/large.", with: "/images/small.")) ?? imageURL
+    }
+
     init?(_ j: JSON) {
         guard let id = j["id"].string, !id.isEmpty else { return nil }
         self.id = id

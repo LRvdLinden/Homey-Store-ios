@@ -92,7 +92,7 @@ struct InstallSheet: View {
     private var appHeader: some View {
         HStack(spacing: 14) {
             StoreAppIcon(url: detail?.primaryBuild?.iconURL, brandColor: detail?.primaryBuild?.brandColor ?? "",
-                         name: detail?.name ?? appId, size: 64)
+                         name: detail?.name ?? appId, size: 64, fallbackURL: detail?.primaryBuild?.imageSmallURL)
             VStack(alignment: .leading, spacing: 3) {
                 Text(detail?.name ?? appId).font(.headline)
                 Text(detail?.authorName ?? "").font(.subheadline).foregroundStyle(.secondary)
@@ -118,34 +118,18 @@ struct InstallSheet: View {
                 VStack(spacing: 0) {
                     ForEach(homeys) { h in
                         let compatible = detail?.supports(h.isCloud ? .cloud : .local) ?? true
+                        let installed = library.installedApp(appId, on: h)
                         Button { homeyID = h.id } label: {
-                            HStack(spacing: 12) {
-                                Image(systemName: h.isCloud ? "cloud.fill" : "cube.fill")
-                                    .foregroundStyle(.white)
-                                    .frame(width: 32, height: 32)
-                                    .background(h.isCloud ? Color.cyan : Theme.accent, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-                                VStack(alignment: .leading, spacing: 1) {
-                                    Text(h.name).foregroundStyle(.primary)
-                                    Text(compatible ? h.subtitle : L("Deze app werkt niet op \(h.isCloud ? "Homey Cloud" : "Homey Pro")"))
-                                        .font(.caption).foregroundStyle(.secondary).lineLimit(1)
-                                }
-                                Spacer()
-                                if let app = library.installedApp(appId, on: h) {
-                                    Text(app.isTest ? "TEST \(app.version)" : app.version)
-                                        .font(.caption2.weight(.semibold))
-                                        .foregroundStyle(app.isTest ? Theme.testOrange : .secondary)
-                                }
-                                Image(systemName: h.id == homeyID ? "checkmark.circle.fill" : "circle")
-                                    .foregroundStyle(h.id == homeyID ? Theme.accent : Color.secondary)
-                                    .font(.title3)
-                            }
-                            .padding(.horizontal, 14).padding(.vertical, 10)
-                            .contentShape(Rectangle())
+                            HomeyRow(homey: h, selected: h.id == homeyID,
+                                     trailing: installed.map { $0.isTest ? "TEST \($0.version)" : $0.version },
+                                     trailingTint: installed?.isTest == true ? Theme.testOrange : .secondary,
+                                     subtitleOverride: compatible ? nil : L("Deze app werkt niet op \(h.isCloud ? "Homey Cloud" : "Homey Pro")"))
+                            .padding(.horizontal, 14).padding(.vertical, 6)
                         }
                         .buttonStyle(.plain)
                         .disabled(!compatible || isWorking)
                         .opacity(compatible ? 1 : 0.45)
-                        if h.id != homeys.last?.id { Divider().padding(.leading, 58) }
+                        if h.id != homeys.last?.id { Divider().padding(.leading, 84) }
                     }
                 }
                 .background(Theme.card, in: RoundedRectangle(cornerRadius: 12, style: .continuous))

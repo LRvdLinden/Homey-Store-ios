@@ -102,7 +102,7 @@ struct TodayHeroCard: View {
             HStack(spacing: 10) {
                 NavigationLink(value: app) {
                     HStack(spacing: 10) {
-                        StoreAppIcon(url: app.iconURL, brandColor: app.brandColor, name: app.name, size: 48)
+                        StoreAppIcon(url: app.iconURL, brandColor: app.brandColor, name: app.name, size: 48, fallbackURL: app.smallImageURL)
                         VStack(alignment: .leading, spacing: 1) {
                             Text(app.name).font(.subheadline.weight(.semibold))
                             Text(app.description).font(.caption).opacity(0.8).lineLimit(1)

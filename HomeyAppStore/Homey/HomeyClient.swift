@@ -10,6 +10,9 @@ struct InstalledApp: Identifiable, Hashable, Sendable {
     let channel: String
     let enabled: Bool
     let autoUpdate: Bool
+    let brandColor: String
+    /// Icon path on the Homey, e.g. `/app/<id>/assets/icon.svg`.
+    let iconPath: String
 
     init?(_ j: JSON) {
         guard let id = j["id"].string, !id.isEmpty else { return nil }
@@ -20,9 +23,19 @@ struct InstalledApp: Identifiable, Hashable, Sendable {
         channel = j.firstString("channel")
         enabled = j["enabled"].bool ?? true
         autoUpdate = j["autoupdate"].bool ?? false
+        brandColor = j.firstString("brandColor")
+        let iconObj = j["iconObj"]
+        let path = iconObj.isContainer ? iconObj.firstString("url") : j.firstString("icon")
+        iconPath = path.isEmpty ? "/app/\(id)/assets/icon.svg" : path
     }
 
     var isTest: Bool { origin.contains("test") || channel == "test" }
+
+    func iconURL(on homey: HomeyRef) -> URL? {
+        if iconPath.hasPrefix("http") { return URL(string: iconPath) }
+        let base = homey.remoteURL.absoluteString.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        return URL(string: base + (iconPath.hasPrefix("/") ? iconPath : "/" + iconPath))
+    }
     var isDevkit: Bool { origin.contains("devkit") }
 
     var originLabel: String {

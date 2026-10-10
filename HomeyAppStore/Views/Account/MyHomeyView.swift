@@ -104,13 +104,10 @@ struct MyHomeyView: View {
 
     private func homeyHeader(_ homey: HomeyRef, count: Int) -> some View {
         HStack(spacing: 14) {
-            Image(systemName: homey.isCloud ? "cloud.fill" : "cube.fill")
-                .font(.title2).foregroundStyle(.white)
-                .frame(width: 52, height: 52)
-                .background(Theme.homeyGradient, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            HomeyImage(homey: homey, size: 64)
             VStack(alignment: .leading, spacing: 2) {
                 Text(homey.name).font(.headline)
-                Text(homey.subtitle).font(.caption).foregroundStyle(.secondary)
+                Text(homey.details).font(.caption).foregroundStyle(.secondary)
                 Text(L("\(count) apps")).font(.caption).foregroundStyle(.secondary)
             }
             Spacer()
@@ -118,7 +115,7 @@ struct MyHomeyView: View {
                 Menu {
                     ForEach(homeys) { h in
                         Button { library.setTarget(h, platform: store.platform, auth: auth) } label: {
-                            if h.id == homey.id { Label(h.name, systemImage: "checkmark") } else { Text(h.name) }
+                            if h.id == homey.id { Label("\(h.name) – \(h.model)", systemImage: "checkmark") } else { Text("\(h.name) – \(h.model)") }
                         }
                     }
                 } label: {
@@ -156,8 +153,11 @@ struct InstalledRow: View {
 
     private var content: some View {
         HStack(spacing: 12) {
-            StoreAppIcon(url: detail?.primaryBuild?.iconURL, brandColor: detail?.primaryBuild?.brandColor ?? "#8E8E93",
-                         name: app.name, size: 48)
+            // Store icon when the app is in the store; otherwise the icon the Homey itself serves
+            // (private apps and CLI installs).
+            StoreAppIcon(url: detail?.primaryBuild?.iconURL ?? app.iconURL(on: homey),
+                         brandColor: detail?.primaryBuild?.brandColor ?? (app.brandColor.isEmpty ? "#8E8E93" : app.brandColor),
+                         name: app.name, size: 48, fallbackURL: detail?.primaryBuild?.imageSmallURL)
             VStack(alignment: .leading, spacing: 2) {
                 Text(app.name).lineLimit(1)
                 HStack(spacing: 6) {

@@ -79,19 +79,9 @@ struct AccountSheet: View {
                             Button {
                                 library.setTarget(h, platform: platform, auth: auth)
                             } label: {
-                                HStack(spacing: 12) {
-                                    Image(systemName: h.isCloud ? "cloud.fill" : "cube.fill")
-                                        .foregroundStyle(.white)
-                                        .frame(width: 30, height: 30)
-                                        .background(h.isCloud ? Color.cyan : Theme.accent, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
-                                    VStack(alignment: .leading, spacing: 1) {
-                                        Text(h.name).foregroundStyle(.primary)
-                                        Text(h.subtitle).font(.caption).foregroundStyle(.secondary)
-                                    }
-                                    Spacer()
-                                    if isTarget { Image(systemName: "checkmark").foregroundStyle(Theme.accent) }
-                                }
+                                HomeyRow(homey: h, selected: isTarget)
                             }
+                            .buttonStyle(.plain)
                         }
                     } header: {
                         Text(L("Mijn Homeys"))
