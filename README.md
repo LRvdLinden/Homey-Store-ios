@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-0.0.1%20(0.0.1)-0082FA?style=for-the-badge" alt="Version 0.0.1 build 0.0.1">
+  <img src="https://img.shields.io/badge/version-0.0.1%20(0.0.2)-0082FA?style=for-the-badge" alt="Version 0.0.1 build 0.0.2">
   <img src="https://img.shields.io/badge/iOS-17%2B-111111?style=for-the-badge&logo=apple&logoColor=white" alt="iOS 17+">
   <img src="https://img.shields.io/badge/iPadOS-17%2B-111111?style=for-the-badge&logo=apple&logoColor=white" alt="iPadOS 17+">
 </p>
@@ -74,7 +74,7 @@ The app icon and splash take their cue from the Homey App Store header on homey.
 2. Select your team under *Signing & Capabilities* (bundle id `nl.lrvdlinden.homeyappstore`).
 3. Run on an iPhone/iPad or simulator with iOS 17+.
 
-Version **0.0.1**, build **0.0.1** (`MARKETING_VERSION` / `CURRENT_PROJECT_VERSION`).
+Version **0.0.1**, build **0.0.2** (`MARKETING_VERSION` / `CURRENT_PROJECT_VERSION`).
 
 ## Notes
 
