@@ -14,7 +14,33 @@
   <img src="https://img.shields.io/badge/iPadOS-17%2B-111111?style=for-the-badge&logo=apple&logoColor=white" alt="iPadOS 17+">
 </p>
 
+<p align="center">
+  <img src="docs/screenshots/banner.png" alt="Homey Store – Vandaag, Apps en app-pagina">
+</p>
+
 ---
+
+## Screenshots
+
+<table>
+  <tr>
+    <td align="center"><img src="docs/screenshots/splash.png" width="230" alt="Splashscreen"><br><sub><b>Splashscreen</b></sub></td>
+    <td align="center"><img src="docs/screenshots/today.png" width="230" alt="Vandaag"><br><sub><b>Vandaag</b></sub></td>
+    <td align="center"><img src="docs/screenshots/apps.png" width="230" alt="Apps"><br><sub><b>Apps</b></sub></td>
+  </tr>
+  <tr>
+    <td align="center"><img src="docs/screenshots/detail.png" width="230" alt="App-pagina met testversie"><br><sub><b>App-pagina met testversie</b></sub></td>
+    <td align="center"><img src="docs/screenshots/install.png" width="230" alt="Installeren: Live of Test"><br><sub><b>Installeren: Live of Test</b></sub></td>
+    <td align="center"><img src="docs/screenshots/myhomey.png" width="230" alt="Mijn Homey met updates"><br><sub><b>Mijn Homey</b></sub></td>
+  </tr>
+  <tr>
+    <td align="center"><img src="docs/screenshots/search.png" width="230" alt="Zoeken"><br><sub><b>Zoeken</b></sub></td>
+    <td></td>
+    <td></td>
+  </tr>
+</table>
+
+<sub>Screenshots zijn ontwerpweergaven met voorbeeld-apps.</sub>
 
 ## What it does
 
