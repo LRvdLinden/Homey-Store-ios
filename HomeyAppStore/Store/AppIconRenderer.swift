@@ -20,7 +20,10 @@ final class AppIconRenderer {
     private var pageReady = false
 
     private lazy var diskDir: URL = {
-        let dir = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0].appendingPathComponent("AppIcons-v2", isDirectory: true)
+        let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+        // Older builds cached broken (nearly transparent) icons; throw those away.
+        for old in ["AppIcons", "AppIcons-v2"] { try? FileManager.default.removeItem(at: caches.appendingPathComponent(old)) }
+        let dir = caches.appendingPathComponent("AppIcons-v3", isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         return dir
     }()
@@ -40,7 +43,7 @@ final class AppIconRenderer {
         if let img = memory[k] { return img }
         if failed.contains(k) { return nil }
         let file = diskDir.appendingPathComponent(k + ".png")
-        if let data = try? Data(contentsOf: file), let img = UIImage(data: data, scale: UIScreen.main.scale) {
+        if let data = try? Data(contentsOf: file), let img = UIImage(data: data, scale: 3) {
             memory[k] = img
             return img
         }
@@ -88,31 +91,68 @@ final class AppIconRenderer {
         let mime = isSVG ? "image/svg+xml" : (url.pathExtension.lowercased() == "jpg" ? "image/jpeg" : "image/png")
         guard let wv = await readyWebView() else { return nil }
 
-        // Put the icon in the page and wait until it has really decoded.
-        let js = """
-        document.body.style.background = bg;
-        const img = document.getElementById('i');
-        img.style.filter = svg ? 'brightness(0) invert(1)' : 'none';
-        img.style.width = img.style.height = svg ? '62%' : '100%';
-        img.src = 'data:' + mime + ';base64,' + b64;
-        try { await img.decode(); } catch (e) { return false; }
-        await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
-        return img.naturalWidth > 0 || svg;
-        """
-        let ok = await withTimeout(seconds: 5) {
-            (try? await wv.callAsyncJavaScript(js, arguments: ["bg": bg, "svg": isSVG, "mime": mime, "b64": data.base64EncodedString()],
-                                                contentWorld: .page)) as? Bool ?? false
-        } ?? false
-        guard ok else { return nil }
-
-        let cfg = WKSnapshotConfiguration()
-        cfg.rect = CGRect(x: 0, y: 0, width: size, height: size)
-        cfg.afterScreenUpdates = true
-        return await withTimeout(seconds: 4) { try? await wv.takeSnapshot(configuration: cfg) } ?? nil
+        // Draw on a <canvas> at 3× and hand back a finished PNG: brand colour plus
+        // the SVG as a white mask (exactly how homey.app shows it). No view snapshot,
+        // so it doesn't matter whether the web view is visible.
+        let b64 = await withTimeout(seconds: 6) {
+            (try? await wv.callAsyncJavaScript(Self.drawJS,
+                                                arguments: ["bg": bg, "svg": isSVG, "mime": mime, "b64": data.base64EncodedString(), "px": 3 * Int(self.size)],
+                                                contentWorld: .page)) as? String
+        } ?? nil
+        guard let b64, let png = Data(base64Encoded: b64), let img = UIImage(data: png, scale: 3) else { return nil }
+        return img
     }
 
-    /// One persistent page with a single <img>. The web view sits in the window
-    /// (WebKit only paints attached views), practically invisible, behind the UI.
+    private static let drawJS = """
+    const bytes = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
+    let src;
+    if (svg) {
+      let text = new TextDecoder().decode(bytes);
+      try {
+        const doc = new DOMParser().parseFromString(text, 'image/svg+xml');
+        const el = doc.documentElement;
+        if (el && el.nodeName.toLowerCase() === 'svg') {
+          const w = parseFloat(el.getAttribute('width')), h = parseFloat(el.getAttribute('height'));
+          if (!el.getAttribute('viewBox') && w > 0 && h > 0) el.setAttribute('viewBox', `0 0 ${w} ${h}`);
+          // Give the SVG a real size so every browser can draw it to a canvas.
+          el.setAttribute('width', '512'); el.setAttribute('height', '512');
+          el.setAttribute('preserveAspectRatio', 'xMidYMid meet');
+          if (!el.getAttribute('xmlns')) el.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+          text = new XMLSerializer().serializeToString(el);
+        }
+      } catch (e) {}
+      src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(text);
+    } else {
+      src = 'data:' + mime + ';base64,' + b64;
+    }
+    const img = new Image();
+    img.src = src;
+    await img.decode();
+    const c = document.createElement('canvas');
+    c.width = c.height = px;
+    const g = c.getContext('2d');
+    g.fillStyle = bg;
+    g.fillRect(0, 0, px, px);
+    if (svg) {
+      const s = px * 0.62, o = (px - s) / 2;
+      const m = document.createElement('canvas');
+      m.width = m.height = px;
+      const mg = m.getContext('2d');
+      mg.drawImage(img, o, o, s, s);
+      mg.globalCompositeOperation = 'source-in';
+      mg.fillStyle = '#ffffff';
+      mg.fillRect(0, 0, px, px);
+      g.drawImage(m, 0, 0);
+    } else {
+      const r = Math.max(px / img.naturalWidth, px / img.naturalHeight);
+      const w = img.naturalWidth * r, h = img.naturalHeight * r;
+      g.drawImage(img, (px - w) / 2, (px - h) / 2, w, h);
+    }
+    return c.toDataURL('image/png').split(',')[1];
+    """
+
+    /// One persistent, empty, transparent page used only to run the canvas code.
+    /// It is parked behind the UI so WebKit keeps it running; it shows nothing.
     private func readyWebView() async -> WKWebView? {
         if let webView, webView.window != nil, pageReady { return webView }
         let windows = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.flatMap(\.windows)
@@ -127,7 +167,8 @@ final class AppIconRenderer {
             wv.isUserInteractionEnabled = false
             wv.scrollView.isScrollEnabled = false
             wv.isOpaque = false
-            wv.alpha = 0.011
+            wv.backgroundColor = .clear
+            wv.scrollView.backgroundColor = .clear
             wv.accessibilityElementsHidden = true
             webView = wv
         }
@@ -135,9 +176,7 @@ final class AppIconRenderer {
         if !pageReady {
             wv.loadHTMLString("""
             <!doctype html><html><head><meta name="viewport" content="width=\(Int(size)),initial-scale=1">
-            <style>html,body{margin:0;width:100%;height:100%;overflow:hidden}
-            body{display:flex;align-items:center;justify-content:center}
-            img{object-fit:contain}</style></head><body><img id="i" alt=""></body></html>
+            <style>html,body{margin:0;background:transparent}</style></head><body><i id="i"></i></body></html>
             """, baseURL: nil)
             // Wait until the page's script context exists.
             for _ in 0..<40 {

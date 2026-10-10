@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-0.0.1%20(0.0.3)-0082FA?style=for-the-badge" alt="Version 0.0.1 build 0.0.3">
+  <img src="https://img.shields.io/badge/version-0.0.1%20(0.0.4)-0082FA?style=for-the-badge" alt="Version 0.0.1 build 0.0.4">
   <img src="https://img.shields.io/badge/iOS-17%2B-111111?style=for-the-badge&logo=apple&logoColor=white" alt="iOS 17+">
   <img src="https://img.shields.io/badge/iPadOS-17%2B-111111?style=for-the-badge&logo=apple&logoColor=white" alt="iPadOS 17+">
 </p>
@@ -67,7 +67,7 @@ The app icon and splash take their cue from the Homey App Store header on homey.
 - **Catalogue:** the public Homey App Store API (`apps-api.athom.com/api/v1`): `app/highlight2` (store front), `app/browse` (lists, categories, search), `app/{id}` (details incl. `liveBuild` / `testBuild`), `app/{id}/changelog`.
 - **Login:** the same flow as the Homey Dev app — Athom's own login on the Developer Tools website, session kept in the iOS Keychain; or a Personal Access Token.
 - **Install:** account token → delegation token (`audience=homey`) → Homey session → `POST /api/manager/apps/store` with `{ id, channel }` (`channel: "test"` for test versions). Remove: `DELETE /api/manager/apps/app/{id}`.
-- **App icons:** like homey.app, the app's SVG icon in white on its brand colour — rendered once and cached; falls back to the app photo. Private and CLI-installed apps use the icon served by your Homey.
+- **App icons:** like homey.app, the app's SVG icon as a white mask on its brand colour — drawn on a canvas, exported as a 3× PNG and cached; falls back to the app photo. Private and CLI-installed apps use the icon served by your Homey.
 - **Homey images:** `modelImage.light` / `modelImage.dark` from your account's Homeys, the same images my.homey.app uses.
 
 ## Build
@@ -76,7 +76,7 @@ The app icon and splash take their cue from the Homey App Store header on homey.
 2. Select your team under *Signing & Capabilities* (bundle id `nl.lrvdlinden.homeyappstore`).
 3. Run on an iPhone/iPad or simulator with iOS 17+.
 
-Version **0.0.1**, build **0.0.3** (`MARKETING_VERSION` / `CURRENT_PROJECT_VERSION`).
+Version **0.0.1**, build **0.0.4** (`MARKETING_VERSION` / `CURRENT_PROJECT_VERSION`).
 
 ## Notes
 

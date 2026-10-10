@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.0.1 (build 0.0.4) — 2026-10-10
+
+- **App icons fixed:** the store icons (SVG) are now drawn on a canvas — brand colour with the icon as a white mask, exactly like homey.app — and returned as a sharp 3× PNG. Build 0.0.3 showed only the brand colour because the hidden render view was nearly transparent.
+- Old, broken icon caches are cleared on first launch.
+
 ## 0.0.1 (build 0.0.3) — 2026-10-10
 
 - **Mijn Homeys** now show the real product images, the same as my.homey.app (Homey Pro, Pro mini, Cloud, Self-Hosted Server; light and dark), with the model as subtitle ("Homey Pro (Early 2023)").
