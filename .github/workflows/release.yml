@@ -1,0 +1,66 @@
+name: Release
+
+# Creates a GitHub release for every new version/build in the Xcode project
+# (MARKETING_VERSION + CURRENT_PROJECT_VERSION), with the matching CHANGELOG
+# section as notes and the source as a zip. Runs on every push to main and
+# can be started by hand under Actions → Release → Run workflow.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Read version and build
+        id: v
+        run: |
+          PBX=HomeyAppStore.xcodeproj/project.pbxproj
+          VERSION=$(grep -m1 -oE 'MARKETING_VERSION = [^;]+' "$PBX" | sed 's/MARKETING_VERSION = //')
+          BUILD=$(grep -m1 -oE 'CURRENT_PROJECT_VERSION = [^;]+' "$PBX" | sed 's/CURRENT_PROJECT_VERSION = //')
+          TAG="v${VERSION}-build-${BUILD}"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "build=$BUILD" >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          if git rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Release notes from CHANGELOG
+        if: steps.v.outputs.exists == 'false'
+        run: |
+          HEADER="## ${{ steps.v.outputs.version }} (build ${{ steps.v.outputs.build }})"
+          awk -v h="$HEADER" '
+            index($0, h) == 1 { on = 1; next }
+            on && /^## / { exit }
+            on { print }
+          ' CHANGELOG.md > notes.md
+          if [ ! -s notes.md ]; then echo "Homey Store ${{ steps.v.outputs.version }} (build ${{ steps.v.outputs.build }})" > notes.md; fi
+          cat notes.md
+
+      - name: Source zip
+        if: steps.v.outputs.exists == 'false'
+        run: git archive --format=zip --prefix=HomeyStore/ -o "HomeyStore-${{ steps.v.outputs.version }}-build-${{ steps.v.outputs.build }}.zip" HEAD
+
+      - name: Create release
+        if: steps.v.outputs.exists == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ steps.v.outputs.tag }}" \
+            "HomeyStore-${{ steps.v.outputs.version }}-build-${{ steps.v.outputs.build }}.zip" \
+            --target "$GITHUB_SHA" \
+            --title "Homey Store ${{ steps.v.outputs.version }} (build ${{ steps.v.outputs.build }})" \
+            --notes-file notes.md \
+            --latest

@@ -78,6 +78,10 @@ The app icon and splash take their cue from the Homey App Store header on homey.
 
 Version **0.0.1**, build **0.0.4** (`MARKETING_VERSION` / `CURRENT_PROJECT_VERSION`).
 
+## Releases
+
+Every new version/build in the Xcode project gets its own [GitHub release](https://github.com/LRvdLinden/Homey-Store-ios/releases) automatically (tag `v<version>-build-<build>`, notes from `CHANGELOG.md`, source zip), via `.github/workflows/release.yml`.
+
 ## Notes
 
 - Installing requires an owner/manager role on that Homey.
