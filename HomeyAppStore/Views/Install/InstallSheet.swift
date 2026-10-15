@@ -137,6 +137,10 @@ struct InstallSheet: View {
 
     private var targetVersion: String {
         if let version, !version.isEmpty { return version }
+        // Homey itself knows best which update is ready for this app (Homey Pro).
+        if let installed, installed.installedChannel == channel, let v = installed.updateVersion, homey?.isCloud == false {
+            return v
+        }
         guard let detail else { return "" }
         return channel == .test ? detail.testVersion : detail.liveVersion
     }
@@ -236,8 +240,15 @@ struct InstallSheet: View {
         }
     }
 
+    /// Homey Cloud keeps its apps up to date by itself; there's nothing to do on the same channel.
+    private var cloudSelfUpdates: Bool {
+        guard let homey, homey.isCloud, let installed, !isRollback else { return false }
+        return installed.installedChannel == channel
+    }
+
     private var actionTitle: String {
         if isRollback { return L("Installeer versie \(targetVersion)") }
+        if cloudSelfUpdates { return L("Homey Cloud werkt deze app zelf bij") }
         guard let installed, detail != nil else { return channel == .test ? L("Installeer testversie") : L("Installeer") }
         if installed.version == targetVersion && installed.installedChannel == channel { return L("Opnieuw installeren") }
         if channel == .test && !installed.isTest { return L("Wissel naar testversie") }
@@ -247,7 +258,7 @@ struct InstallSheet: View {
 
     private var canAct: Bool {
         guard let homey, detail != nil, !isWorking else { return false }
-        return isCompatible(homey) && homey.canInstall && !targetVersion.isEmpty
+        return isCompatible(homey) && homey.canInstall && !targetVersion.isEmpty && !cloudSelfUpdates
     }
 
     private var actionButton: some View {

@@ -112,8 +112,9 @@ final class HomeyLibrary {
 
     /// The version this installed app can be updated to, or nil. Uses Homey's own
     /// `updateAvailable` first, otherwise the store version of the installed channel.
-    func updateVersion(for app: InstalledApp, detail: StoreAppDetail?) -> String? {
-        guard app.isFromStore else { return nil }
+    /// Homey Cloud updates its apps itself (my.homey.app offers no update there either).
+    func updateVersion(for app: InstalledApp, detail: StoreAppDetail?, on homey: HomeyRef? = nil) -> String? {
+        guard app.isFromStore, homey?.isCloud != true else { return nil }
         if let v = app.updateVersion { return v }
         guard let detail else { return nil }
         let latest = app.isTest ? (detail.testVersion.isEmpty ? detail.liveVersion : detail.testVersion) : detail.liveVersion
@@ -123,7 +124,7 @@ final class HomeyLibrary {
 
     func updates(on homey: HomeyRef, details: [String: StoreAppDetail]) -> [InstalledApp] {
         (installed[homey.id]?.values.map { $0 } ?? [])
-            .filter { updateVersion(for: $0, detail: details[$0.id]) != nil }
+            .filter { updateVersion(for: $0, detail: details[$0.id], on: homey) != nil }
     }
 
     // MARK: Actions
@@ -132,12 +133,38 @@ final class HomeyLibrary {
     /// expected version/channel before reporting "done".
     func install(_ appId: String, channel: InstallChannel, version: String? = nil, expectedVersion: String?,
                  on homey: HomeyRef, auth: AuthManager) async {
+        let current = installed[homey.id]?[appId]
+        // Keep Homey's own channel name when staying on the same channel (like my.homey.app);
+        // only name a channel when installing a test version or leaving one.
+        let apiChannel: String?
+        if let current, current.installedChannel == channel, !current.channel.isEmpty {
+            apiChannel = current.channel
+        } else {
+            apiChannel = channel == .test ? "test" : (current?.isTest == true ? "live" : nil)
+        }
+        // An installed app only changes when Homey is told which version to install.
+        var sendVersion = version
+        if sendVersion == nil, current != nil, let expectedVersion, !expectedVersion.isEmpty, !homey.isCloud {
+            sendVersion = expectedVersion
+        }
+        await perform(appId, channel: channel, apiChannel: apiChannel, version: sendVersion,
+                      expectedVersion: version ?? expectedVersion, on: homey, auth: auth)
+    }
+
+    /// Updates an installed app to `version` on its current channel.
+    func update(_ app: InstalledApp, to version: String, on homey: HomeyRef, auth: AuthManager) async {
+        await perform(app.id, channel: app.installedChannel, apiChannel: app.channel.isEmpty ? nil : app.channel,
+                      version: version, expectedVersion: version, on: homey, auth: auth)
+    }
+
+    private func perform(_ appId: String, channel: InstallChannel, apiChannel: String?, version: String?,
+                         expectedVersion: String?, on homey: HomeyRef, auth: AuthManager) async {
         let key = "\(homey.id)|\(appId)"
         states[key] = .working(channel)
         let gen = generation
         do {
-            try await client(homey, auth: auth).install(appId: appId, channel: channel, version: version)
-            let ok = await waitForInstall(appId, channel: channel, version: version ?? expectedVersion, homey: homey, auth: auth)
+            try await client(homey, auth: auth).install(appId: appId, channel: apiChannel, version: version)
+            let ok = await waitForInstall(appId, channel: channel, version: expectedVersion, homey: homey, auth: auth)
             guard gen == generation else { return }
             states[key] = ok ? .done : .failed(L("De installatie is gestart maar nog niet klaar. Kijk over een minuut in Mijn Homey."))
         } catch {
@@ -188,7 +215,8 @@ final class HomeyLibrary {
         for attempt in 0..<20 {
             await refresh(homey, auth: auth, force: true)
             if let app = installed[homey.id]?[appId], app.installedChannel == channel,
-               version == nil || version == "" || app.version == version {
+               version == nil || version == "" || app.version == version,
+               app.updateVersion == nil || app.updateVersion != version {
                 return true
             }
             try? await Task.sleep(for: .seconds(attempt < 5 ? 1.5 : 3))

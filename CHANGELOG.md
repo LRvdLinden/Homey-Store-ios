@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.0.1 (build 0.0.6) — 2026-10-15
+
+### Fixed
+- **Updating apps works.** The update now sends exactly what my.homey.app sends: the app id, its current channel and the **version** to install (from Homey's own update notice, or the store). Without the version Homey saw the app as already installed and did nothing.
+- "Update all" in Mijn Homey uses the same update call.
+- Homey Cloud updates its apps by itself (my.homey.app has no update button there either); the app no longer offers an update on Homey Cloud.
+- Switching from a test version back to live tries the channel names used by different Homey firmware versions.
+
 ## 1.0.1 (build 0.0.5) — 2026-10-15
 
 Full review: all known bugs fixed and a set of new features.

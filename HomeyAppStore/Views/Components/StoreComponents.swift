@@ -25,7 +25,7 @@ struct GetButton: View {
 
     private var hasUpdate: Bool {
         guard let installed else { return false }
-        return library.updateVersion(for: installed, detail: detail) != nil
+        return library.updateVersion(for: installed, detail: detail, on: target) != nil
     }
 
     private var minWidth: CGFloat { prominent ? width * 1.2 : width }

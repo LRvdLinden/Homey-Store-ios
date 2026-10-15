@@ -133,20 +133,25 @@ final class HomeyClient {
         try await request("/api/manager/apps/app/").items.compactMap(InstalledApp.init)
     }
 
-    /// ManagerApps.installFromAppStore. `channel` "test" installs the test version;
-    /// `version` (Homey Pro only) installs that exact version.
-    func install(appId: String, channel: InstallChannel, version: String? = nil) async throws {
-        var body: [String: JSON] = ["id": .string(appId), "channel": .string(channel.rawValue)]
-        if supportsAppManagement {
-            body["waitForInstall"] = .bool(true)
+    /// ManagerApps.installFromAppStore — exactly what my.homey.app sends:
+    /// `{ id, channel, version }`. For an update the version is required: without it
+    /// Homey sees the app as already installed and does nothing. `channel` is the
+    /// channel name Homey uses (e.g. the installed app's own `channel` value).
+    func install(appId: String, channel: String?, version: String?) async throws {
+        // For "back to live" the channel name differs between firmware versions; try the
+        // known names, then Homey's default channel.
+        var candidates: [String?] = [channel]
+        if channel == "live" { candidates = ["live", "stable", nil] }
+        for (i, ch) in candidates.enumerated() {
+            var body: [String: JSON] = ["id": .string(appId)]
+            if let ch, !ch.isEmpty { body["channel"] = .string(ch) }
             if let version, !version.isEmpty { body["version"] = .string(version) }
-        }
-        do {
-            _ = try await request("/api/manager/apps/store", method: "POST", json: .object(body), timeout: 240)
-        } catch let e as APIError where e.status == 400 && channel == .live {
-            // Older firmware may not accept an explicit "live" channel; live is the default.
-            body["channel"] = nil
-            _ = try await request("/api/manager/apps/store", method: "POST", json: .object(body), timeout: 240)
+            do {
+                _ = try await request("/api/manager/apps/store", method: "POST", json: .object(body), timeout: 240)
+                return
+            } catch let e as APIError where e.status == 400 && i < candidates.count - 1 {
+                continue
+            }
         }
     }
 

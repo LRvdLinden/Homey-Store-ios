@@ -43,7 +43,7 @@ struct MyHomeyView: View {
     private func installedList(_ homey: HomeyRef) -> some View {
         let apps = (library.installed[homey.id].map { Array($0.values) } ?? [])
             .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
-        let updates = apps.filter { library.updateVersion(for: $0, detail: store.details[$0.id]) != nil }
+        let updates = apps.filter { library.updateVersion(for: $0, detail: store.details[$0.id], on: homey) != nil }
         let updateIDs = Set(updates.map(\.id))
         let crashed = apps.filter { $0.crashed && !updateIDs.contains($0.id) }
         let crashedIDs = Set(crashed.map(\.id))
@@ -124,8 +124,8 @@ struct MyHomeyView: View {
         updatingAll = true
         Task {
             for app in updates {
-                let target = library.updateVersion(for: app, detail: store.details[app.id])
-                await library.install(app.id, channel: app.installedChannel, expectedVersion: target, on: homey, auth: auth)
+                guard let target = library.updateVersion(for: app, detail: store.details[app.id], on: homey) else { continue }
+                await library.update(app, to: target, on: homey, auth: auth)
             }
             updatingAll = false
         }
@@ -170,7 +170,7 @@ struct InstalledRow: View {
     @State private var actionError: String?
 
     private var detail: StoreAppDetail? { store.details[app.id] }
-    private var update: String? { library.updateVersion(for: app, detail: detail) }
+    private var update: String? { library.updateVersion(for: app, detail: detail, on: homey) }
     private var canManage: Bool { !homey.isCloud && homey.canInstall }
     private var storeApp: StoreApp { detail.map(StoreApp.init(detail:)) ?? StoreApp(id: app.id) }
 

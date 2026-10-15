@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-1.0.1%20(0.0.5)-0082FA?style=for-the-badge" alt="Version 1.0.1 build 0.0.5">
+  <img src="https://img.shields.io/badge/version-1.0.1%20(0.0.6)-0082FA?style=for-the-badge" alt="Version 1.0.1 build 0.0.6">
   <img src="https://img.shields.io/badge/iOS-17%2B-111111?style=for-the-badge&logo=apple&logoColor=white" alt="iOS 17+">
   <img src="https://img.shields.io/badge/iPadOS-17%2B-111111?style=for-the-badge&logo=apple&logoColor=white" alt="iPadOS 17+">
 </p>
@@ -92,7 +92,7 @@ Unit tests (target `HomeyAppStoreTests`) cover parsing of the store and Homey da
 2. Select your team under *Signing & Capabilities* (bundle id `nl.lrvdlinden.homeyappstore`).
 3. Run on an iPhone/iPad or simulator with iOS 17+.
 
-Version **1.0.1**, build **0.0.5** (`MARKETING_VERSION` / `CURRENT_PROJECT_VERSION`).
+Version **1.0.1**, build **0.0.6** (`MARKETING_VERSION` / `CURRENT_PROJECT_VERSION`).
 
 ## Releases
 
