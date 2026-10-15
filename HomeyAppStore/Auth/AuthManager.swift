@@ -25,6 +25,29 @@ struct StoredAccount: Codable, Identifiable, Equatable, Sendable {
     var lastUsed: Date
     var needsLogin: Bool = false
 
+    init(id: String, name: String, email: String, avatar: String, credential: Credential, lastUsed: Date, needsLogin: Bool = false) {
+        self.id = id
+        self.name = name
+        self.email = email
+        self.avatar = avatar
+        self.credential = credential
+        self.lastUsed = lastUsed
+        self.needsLogin = needsLogin
+    }
+
+    /// Tolerant decoding: fields added later (like `needsLogin`) may be missing in
+    /// accounts saved by an older build — they must not make all accounts disappear.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(String.self, forKey: .id)
+        name = try c.decodeIfPresent(String.self, forKey: .name) ?? ""
+        email = try c.decodeIfPresent(String.self, forKey: .email) ?? ""
+        avatar = try c.decodeIfPresent(String.self, forKey: .avatar) ?? ""
+        credential = try c.decode(Credential.self, forKey: .credential)
+        lastUsed = try c.decodeIfPresent(Date.self, forKey: .lastUsed) ?? .distantPast
+        needsLogin = try c.decodeIfPresent(Bool.self, forKey: .needsLogin) ?? false
+    }
+
     var avatarURL: URL? { URL(string: avatar) }
     var methodLabel: String {
         switch credential { case .web: return L("Homey-account"); case .pat: return "Personal Access Token" }

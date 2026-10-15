@@ -121,12 +121,12 @@ final class AppIconRenderer: NSObject, WKNavigationDelegate {
         await acquireSlot()
         defer { releaseSlot() }
         guard !Task.isCancelled else { return nil }
-        var img = await draw(data, url: url, color: color)
-        if img == nil, !Task.isCancelled {
+        var drawn = await draw(data, url: url, color: color)
+        if drawn == nil, !Task.isCancelled {
             reloadPage()
-            img = await draw(data, url: url, color: color)
+            drawn = await draw(data, url: url, color: color)
         }
-        guard let img else { return nil }
+        guard let img = drawn else { return nil }
         store(img, k)
         if let png = img.pngData() {
             Task.detached(priority: .background) { try? png.write(to: file, options: .atomic) }
@@ -171,20 +171,29 @@ final class AppIconRenderer: NSObject, WKNavigationDelegate {
     /// the other is ignored. A hanging page can never block the queue.
     private func evaluate(_ wv: WKWebView, args: [String: Any], timeout: Double) async -> String? {
         await withCheckedContinuation { (c: CheckedContinuation<String?, Never>) in
-            var finished = false
-            func finish(_ value: String?) {
-                guard !finished else { return }
-                finished = true
-                c.resume(returning: value)
-            }
+            let once = ResumeOnce(c)
             wv.callAsyncJavaScript(Self.drawJS, arguments: args, in: nil, in: .page) { result in
-                finish((try? result.get()) as? String)
+                let value = (try? result.get()) as? String
+                MainActor.assumeIsolated { once.finish(value) }
             }
             Task { @MainActor in
                 try? await Task.sleep(for: .seconds(timeout))
-                if !finished { self.reloadPage() }
-                finish(nil)
+                if !once.finished { self.reloadPage() }
+                once.finish(nil)
             }
+        }
+    }
+
+    /// Resumes a continuation exactly once (JS result or time-out, whichever is first).
+    @MainActor
+    private final class ResumeOnce {
+        private let continuation: CheckedContinuation<String?, Never>
+        private(set) var finished = false
+        init(_ c: CheckedContinuation<String?, Never>) { continuation = c }
+        func finish(_ value: String?) {
+            guard !finished else { return }
+            finished = true
+            continuation.resume(returning: value)
         }
     }
 
