@@ -108,7 +108,14 @@ struct AccountSheet: View {
                     }
                 } else {
                     Section {
-                        Button(L("Toon het welkomstscherm")) { skippedLogin = false; dismiss() }
+                        Button(L("Toon het welkomstscherm")) {
+                            // Close this sheet first; the screen under it is replaced.
+                            dismiss()
+                            Task {
+                                try? await Task.sleep(for: .milliseconds(500))
+                                skippedLogin = false
+                            }
+                        }
                     }
                 }
 
@@ -123,7 +130,21 @@ struct AccountSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button(L("Klaar")) { dismiss() } } }
             .confirmationDialog(L("Afmelden bij \(auth.active?.email ?? "")?"), isPresented: $confirmSignOut, titleVisibility: .visible) {
-                Button(L("Afmelden"), role: .destructive) { auth.logout() }
+                Button(L("Afmelden"), role: .destructive) {
+                    // Signing out of the last account replaces the whole screen: close the
+                    // sheet first, then sign out (swapping the view tree under an open
+                    // sheet is what crashed before).
+                    let last = auth.accounts.count <= 1
+                    if last {
+                        dismiss()
+                        Task {
+                            try? await Task.sleep(for: .milliseconds(550))
+                            auth.logout()
+                        }
+                    } else {
+                        auth.logout()
+                    }
+                }
             }
             .fullScreenCover(isPresented: $addAccount) {
                 LoginView(isAddingAccount: auth.isLoggedIn, allowClose: true, onAdded: { dismiss() })

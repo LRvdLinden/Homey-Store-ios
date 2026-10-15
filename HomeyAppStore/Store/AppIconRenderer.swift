@@ -2,20 +2,32 @@ import SwiftUI
 import UIKit
 import WebKit
 
-/// Homey app icons are SVGs. homey.app draws them as a white mask on a circle in
-/// the app's brand colour; we do the same, App Store–style as a rounded tile.
-/// SwiftUI can't draw SVG, so a single hidden web page renders each icon once
-/// (white glyph on brand colour), and the result is cached in memory and on disk.
+/// Homey app icons are SVGs. homey.app draws them as a white mask on the app's
+/// brand colour; we do the same, App Store–style as a rounded tile.
+///
+/// SwiftUI can't draw SVG, so one hidden, transparent web page draws each icon on a
+/// `<canvas>` and hands back a PNG. Downloads run in parallel; drawing happens one at
+/// a time, newest request first (what you just scrolled to). Results are cached in a
+/// size-limited memory cache and on disk.
 @MainActor
-final class AppIconRenderer {
+final class AppIconRenderer: NSObject, WKNavigationDelegate {
     static let shared = AppIconRenderer()
 
     private let size: CGFloat = 180
-    private var memory: [String: UIImage] = [:]
+    private let memory: NSCache<NSString, UIImage> = {
+        let c = NSCache<NSString, UIImage>()
+        c.totalCostLimit = 60 * 1024 * 1024   // ~60 MB of decoded icons
+        return c
+    }()
+    /// Icons that can't exist (HTTP 4xx). Network trouble is never remembered.
     private var failed: Set<String> = []
-    private var waiting: [String: [CheckedContinuation<UIImage?, Never>]] = [:]
-    private var queue: [(key: String, url: URL, color: String)] = []
-    private var busy = false
+    private var inflight: [String: Task<UIImage?, Never>] = [:]
+    private var waiters: [String: Int] = [:]
+
+    // One drawing at a time, last-in-first-out.
+    private var drawing = false
+    private var slotQueue: [CheckedContinuation<Void, Never>] = []
+
     private var webView: WKWebView?
     private var pageReady = false
 
@@ -28,9 +40,11 @@ final class AppIconRenderer {
         return dir
     }()
 
+    // MARK: Public
+
     func cached(_ url: URL?, color: String) -> UIImage? {
         guard let url else { return nil }
-        return memory[key(url, color)]
+        return memory.object(forKey: key(url, color) as NSString)
     }
 
     func hasFailed(_ url: URL?, color: String) -> Bool {
@@ -38,21 +52,100 @@ final class AppIconRenderer {
         return failed.contains(key(url, color))
     }
 
+    /// Called when the app becomes active again or the network returns.
+    func retryFailures() {
+        failed.removeAll()
+    }
+
     func icon(_ url: URL, color: String) async -> UIImage? {
         let k = key(url, color)
-        if let img = memory[k] { return img }
+        if let img = memory.object(forKey: k as NSString) { return img }
         if failed.contains(k) { return nil }
+
+        let task: Task<UIImage?, Never>
+        if let running = inflight[k] {
+            task = running
+        } else {
+            task = Task { @MainActor in await self.produce(url, color: color, key: k) }
+            inflight[k] = task
+        }
+        waiters[k, default: 0] += 1
+        let img = await withTaskCancellationHandler {
+            await task.value
+        } onCancel: {
+            Task { @MainActor in self.dropWaiter(k) }
+        }
+        if !Task.isCancelled { dropWaiter(k) }
+        if inflight[k] == task { inflight[k] = nil }
+        return img
+    }
+
+    // MARK: Pipeline
+
+    private func dropWaiter(_ k: String) {
+        guard let n = waiters[k] else { return }
+        if n <= 1 {
+            waiters[k] = nil
+            // Nobody wants this icon any more (scrolled away): stop working on it.
+            if let t = inflight[k] { t.cancel(); inflight[k] = nil }
+        } else {
+            waiters[k] = n - 1
+        }
+    }
+
+    private func produce(_ url: URL, color: String, key k: String) async -> UIImage? {
+        // 1. Disk cache (read off the main thread).
         let file = diskDir.appendingPathComponent(k + ".png")
-        if let data = try? Data(contentsOf: file), let img = UIImage(data: data, scale: 3) {
-            memory[k] = img
+        let cachedData = await Task.detached(priority: .utility) { try? Data(contentsOf: file) }.value
+        if let cachedData, let img = UIImage(data: cachedData, scale: 3) {
+            store(img, k)
             return img
         }
-        return await withCheckedContinuation { c in
-            if waiting[k] != nil { waiting[k]!.append(c); return }
-            waiting[k] = [c]
-            queue.append((k, url, color))
-            pump()
+
+        // 2. Download (in parallel with other icons).
+        let data: Data
+        do {
+            let (d, resp) = try await HTTP.session.data(from: url)
+            if let http = resp as? HTTPURLResponse, (400..<500).contains(http.statusCode) {
+                failed.insert(k)
+                return nil
+            }
+            guard !d.isEmpty else { return nil }
+            data = d
+        } catch {
+            return nil   // offline / cancelled: try again next time
         }
+        guard !Task.isCancelled else { return nil }
+
+        // 3. Draw (one at a time, newest first).
+        await acquireSlot()
+        defer { releaseSlot() }
+        guard !Task.isCancelled else { return nil }
+        var img = await draw(data, url: url, color: color)
+        if img == nil, !Task.isCancelled {
+            reloadPage()
+            img = await draw(data, url: url, color: color)
+        }
+        guard let img else { return nil }
+        store(img, k)
+        if let png = img.pngData() {
+            Task.detached(priority: .background) { try? png.write(to: file, options: .atomic) }
+        }
+        return img
+    }
+
+    private func store(_ img: UIImage, _ k: String) {
+        let px = Int(img.size.width * img.scale * img.size.height * img.scale * 4)
+        memory.setObject(img, forKey: k as NSString, cost: px)
+    }
+
+    private func acquireSlot() async {
+        if !drawing { drawing = true; return }
+        await withCheckedContinuation { slotQueue.append($0) }
+    }
+
+    private func releaseSlot() {
+        if let next = slotQueue.popLast() { next.resume() } else { drawing = false }
     }
 
     private func key(_ url: URL, _ color: String) -> String {
@@ -60,47 +153,39 @@ final class AppIconRenderer {
         return String(raw.unicodeScalars.reduce(UInt64(5381)) { ($0 << 5) &+ $0 &+ UInt64($1.value) }, radix: 16)
     }
 
-    private func pump() {
-        guard !busy, !queue.isEmpty else { return }
-        busy = true
-        let job = queue.removeFirst()
-        Task {
-            var img: UIImage?
-            for attempt in 0..<2 where img == nil {
-                if attempt > 0 { try? await Task.sleep(for: .milliseconds(400)) }
-                img = await render(job.url, color: job.color)
-            }
-            if let img {
-                memory[job.key] = img
-                if let png = img.pngData() { try? png.write(to: diskDir.appendingPathComponent(job.key + ".png")) }
-            } else {
-                failed.insert(job.key)
-            }
-            waiting.removeValue(forKey: job.key)?.forEach { $0.resume(returning: img) }
-            busy = false
-            pump()
-        }
-    }
+    // MARK: Drawing
 
-    private func render(_ url: URL, color: String) async -> UIImage? {
-        guard let (data, resp) = try? await HTTP.session.data(from: url), !data.isEmpty,
-              (resp as? HTTPURLResponse).map({ (200..<300).contains($0.statusCode) }) ?? true else { return nil }
+    private func draw(_ data: Data, url: URL, color: String) async -> UIImage? {
         let bg = Color(hex: color) != nil ? color : "#0A84FF"
         let head = String(decoding: data.prefix(512), as: UTF8.self)
         let isSVG = url.pathExtension.lowercased() == "svg" || head.contains("<svg")
         let mime = isSVG ? "image/svg+xml" : (url.pathExtension.lowercased() == "jpg" ? "image/jpeg" : "image/png")
         guard let wv = await readyWebView() else { return nil }
+        let args: [String: Any] = ["bg": bg, "svg": isSVG, "mime": mime, "b64": data.base64EncodedString(), "px": 3 * Int(size)]
+        guard let b64 = await evaluate(wv, args: args, timeout: 6),
+              let png = Data(base64Encoded: b64) else { return nil }
+        return UIImage(data: png, scale: 3)
+    }
 
-        // Draw on a <canvas> at 3× and hand back a finished PNG: brand colour plus
-        // the SVG as a white mask (exactly how homey.app shows it). No view snapshot,
-        // so it doesn't matter whether the web view is visible.
-        let b64 = await withTimeout(seconds: 6) {
-            (try? await wv.callAsyncJavaScript(Self.drawJS,
-                                                arguments: ["bg": bg, "svg": isSVG, "mime": mime, "b64": data.base64EncodedString(), "px": 3 * Int(self.size)],
-                                                contentWorld: .page)) as? String
-        } ?? nil
-        guard let b64, let png = Data(base64Encoded: b64), let img = UIImage(data: png, scale: 3) else { return nil }
-        return img
+    /// Runs the drawing script with a hard time-out: whichever comes first wins,
+    /// the other is ignored. A hanging page can never block the queue.
+    private func evaluate(_ wv: WKWebView, args: [String: Any], timeout: Double) async -> String? {
+        await withCheckedContinuation { (c: CheckedContinuation<String?, Never>) in
+            var finished = false
+            func finish(_ value: String?) {
+                guard !finished else { return }
+                finished = true
+                c.resume(returning: value)
+            }
+            wv.callAsyncJavaScript(Self.drawJS, arguments: args, in: nil, in: .page) { result in
+                finish((try? result.get()) as? String)
+            }
+            Task { @MainActor in
+                try? await Task.sleep(for: .seconds(timeout))
+                if !finished { self.reloadPage() }
+                finish(nil)
+            }
+        }
     }
 
     private static let drawJS = """
@@ -151,6 +236,8 @@ final class AppIconRenderer {
     return c.toDataURL('image/png').split(',')[1];
     """
 
+    // MARK: Web view
+
     /// One persistent, empty, transparent page used only to run the canvas code.
     /// It is parked behind the UI so WebKit keeps it running; it shows nothing.
     private func readyWebView() async -> WKWebView? {
@@ -163,7 +250,8 @@ final class AppIconRenderer {
         } else {
             let cfg = WKWebViewConfiguration()
             cfg.websiteDataStore = .nonPersistent()
-            wv = WKWebView(frame: CGRect(x: 0, y: 0, width: size, height: size), configuration: cfg)
+            wv = WKWebView(frame: CGRect(x: 0, y: 0, width: 4, height: 4), configuration: cfg)
+            wv.navigationDelegate = self
             wv.isUserInteractionEnabled = false
             wv.scrollView.isScrollEnabled = false
             wv.isOpaque = false
@@ -174,11 +262,7 @@ final class AppIconRenderer {
         }
         if wv.superview !== window { window.insertSubview(wv, at: 0) }
         if !pageReady {
-            wv.loadHTMLString("""
-            <!doctype html><html><head><meta name="viewport" content="width=\(Int(size)),initial-scale=1">
-            <style>html,body{margin:0;background:transparent}</style></head><body><i id="i"></i></body></html>
-            """, baseURL: nil)
-            // Wait until the page's script context exists.
+            wv.loadHTMLString("<!doctype html><html><head><style>html,body{margin:0;background:transparent}</style></head><body><i id=\"i\"></i></body></html>", baseURL: nil)
             for _ in 0..<40 {
                 try? await Task.sleep(for: .milliseconds(50))
                 if (try? await wv.evaluateJavaScript("document.getElementById('i') != null")) as? Bool == true {
@@ -190,19 +274,16 @@ final class AppIconRenderer {
         return pageReady ? wv : nil
     }
 
-    private func withTimeout<T>(seconds: Double, _ op: @escaping @MainActor () async -> T) async -> T? {
-        await withTaskGroup(of: T?.self) { group in
-            group.addTask { @MainActor in await op() }
-            group.addTask { try? await Task.sleep(for: .seconds(seconds)); return nil }
-            let first = await group.next() ?? nil
-            group.cancelAll()
-            return first
-        }
+    private func reloadPage() {
+        pageReady = false
+    }
+
+    /// iOS may stop the web content process in the background; start a fresh page.
+    func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+        pageReady = false
     }
 }
 
-/// App Store-style rounded app icon: the app's SVG icon in white on its brand
-/// colour. Falls back to the app's photo, then to its initial.
 struct StoreAppIcon: View {
     let url: URL?
     let brandColor: String
@@ -231,7 +312,8 @@ struct StoreAppIcon: View {
             RoundedRectangle(cornerRadius: size * 0.225, style: .continuous)
                 .strokeBorder(Color.primary.opacity(0.08), lineWidth: 0.5)
         )
-        .task(id: "\(url?.absoluteString ?? "")|\(brandColor)") {
+        // Re-runs when the network comes back, so icons that failed offline appear.
+        .task(id: "\(url?.absoluteString ?? "")|\(brandColor)|\(NetworkMonitor.shared.reconnects)") {
             image = nil
             useFallback = false
             guard let url else { useFallback = true; return }

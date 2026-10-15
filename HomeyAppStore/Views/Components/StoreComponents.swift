@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 // MARK: - Get / Installed button
 
@@ -14,6 +15,8 @@ struct GetButton: View {
     @Environment(HomeyLibrary.self) private var library
     @State private var showInstall = false
     @State private var showLogin = false
+    @ScaledMetric(relativeTo: .footnote) private var height: CGFloat = 28
+    @ScaledMetric(relativeTo: .footnote) private var width: CGFloat = 74
 
     private var target: HomeyRef? { library.target(for: store.platform, auth: auth) }
     private var installed: InstalledApp? { library.installedApp(appId, on: target) }
@@ -21,9 +24,13 @@ struct GetButton: View {
     private var detail: StoreAppDetail? { store.details[appId] }
 
     private var hasUpdate: Bool {
-        guard let installed, let d = detail, !installed.isTest, !installed.isDevkit, !d.liveVersion.isEmpty else { return false }
-        return d.liveVersion.compare(installed.version, options: .numeric) == .orderedDescending
+        guard let installed else { return false }
+        return library.updateVersion(for: installed, detail: detail) != nil
     }
+
+    private var minWidth: CGFloat { prominent ? width * 1.2 : width }
+    private var minHeight: CGFloat { prominent ? height * 1.15 : height }
+    private var labelFont: Font { prominent ? .subheadline.weight(.bold) : .footnote.weight(.bold) }
 
     var body: some View {
         Button {
@@ -51,24 +58,25 @@ struct GetButton: View {
         if case .working = state {
             ProgressView()
                 .controlSize(.small)
-                .frame(width: prominent ? 88 : 74, height: prominent ? 32 : 28)
+                .frame(width: minWidth, height: minHeight)
         } else if let installed, !hasUpdate {
             HStack(spacing: 4) {
                 Image(systemName: "checkmark")
                 Text(installed.isTest ? "TEST" : (installed.version.isEmpty ? L("KLAAR") : installed.version))
             }
-            .font(.system(size: prominent ? 15 : 13, weight: .bold))
+            .font(labelFont)
+            .lineLimit(1)
             .foregroundStyle(installed.isTest ? Theme.testOrange : Theme.accent)
             .padding(.horizontal, 14)
-            .frame(minWidth: prominent ? 88 : 74, minHeight: prominent ? 32 : 28)
+            .frame(minWidth: minWidth, minHeight: minHeight)
             .background(Theme.pill, in: Capsule())
         } else {
             Text(hasUpdate ? L("UPDATE") : L("INSTALLEER"))
-                .font(.system(size: prominent ? 15 : 13, weight: .bold))
+                .font(labelFont)
                 .foregroundStyle(prominent ? .white : Theme.accent)
                 .lineLimit(1)
                 .padding(.horizontal, 14)
-                .frame(minWidth: prominent ? 88 : 74, minHeight: prominent ? 32 : 28)
+                .frame(minWidth: minWidth, minHeight: minHeight)
                 .background(prominent ? AnyShapeStyle(Theme.accent) : AnyShapeStyle(Theme.pill), in: Capsule())
         }
     }
@@ -113,6 +121,35 @@ struct AppRow: View {
             GetButton(appId: app.id, name: app.name)
         }
         .padding(.vertical, 6)
+        .contextMenu {
+            ShareLink(item: Config.storePage(app.id), preview: SharePreview(app.name, image: Image("StoreIcon"))) {
+                Label(L("Deel"), systemImage: "square.and.arrow.up")
+            }
+            Link(destination: Config.storePage(app.id)) { Label(L("Bekijk op homey.app"), systemImage: "safari") }
+            Button { UIPasteboard.general.string = app.id } label: { Label(L("Kopieer app-ID"), systemImage: "doc.on.doc") }
+        } preview: {
+            AppPeek(app: app)
+        }
+    }
+}
+
+/// Preview shown when long-pressing an app row.
+struct AppPeek: View {
+    let app: StoreApp
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            PromoImage(url: app.imageURL, brandColor: app.brandColor).frame(width: 320, height: 200)
+            HStack(spacing: 12) {
+                StoreAppIcon(url: app.iconURL, brandColor: app.brandColor, name: app.name, size: 48, fallbackURL: app.smallImageURL)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(app.name).font(.headline)
+                    Text(app.description).font(.subheadline).foregroundStyle(.secondary).lineLimit(2)
+                }
+            }
+            .padding(14)
+        }
+        .frame(width: 320)
     }
 }
 
@@ -173,7 +210,7 @@ struct AppShelf: View {
                         }
                         Spacer(minLength: 0)
                     }
-                    .containerRelativeFrame(.horizontal) { w, _ in w - 56 }
+                    .containerRelativeFrame(.horizontal) { w, _ in min(w - 56, 380) }
                 }
             }
             .scrollTargetLayout()

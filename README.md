@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-0.0.1%20(0.0.4)-0082FA?style=for-the-badge" alt="Version 0.0.1 build 0.0.4">
+  <img src="https://img.shields.io/badge/version-1.0.1%20(0.0.5)-0082FA?style=for-the-badge" alt="Version 1.0.1 build 0.0.5">
   <img src="https://img.shields.io/badge/iOS-17%2B-111111?style=for-the-badge&logo=apple&logoColor=white" alt="iOS 17+">
   <img src="https://img.shields.io/badge/iPadOS-17%2B-111111?style=for-the-badge&logo=apple&logoColor=white" alt="iPadOS 17+">
 </p>
@@ -38,6 +38,11 @@
     <td align="center"><img src="docs/screenshots/homeys.png" width="230" alt="Mijn Homeys"><br><sub><b>Mijn Homeys</b></sub></td>
     <td align="center"><img src="docs/screenshots/splash-cloud.png" width="230" alt="Splashscreen Homey Cloud"><br><sub><b>Splashscreen (Homey Cloud)</b></sub></td>
   </tr>
+  <tr>
+    <td align="center"><img src="docs/screenshots/reviews.png" width="230" alt="Recensies en meer van de ontwikkelaar"><br><sub><b>Recensies &amp; meer van de ontwikkelaar</b></sub></td>
+    <td align="center"><img src="docs/screenshots/filters.png" width="230" alt="Filters"><br><sub><b>Filters en sorteren</b></sub></td>
+    <td></td>
+  </tr>
 </table>
 
 <sub>Screenshots zijn ontwerpweergaven met voorbeeld-apps.</sub>
@@ -56,6 +61,13 @@
 | **Test versions** | Apps with a test build show an orange banner and a *Testversie* section; install the test or share the test link. |
 | **Mijn Homey** | Apps installed on your Homey with available updates (*Werk alles bij*), test installs and CLI dev installs. |
 | **Mijn Homeys** | Your Homeys with the same product images as my.homey.app (Homey Pro, Pro mini, Cloud, Self-Hosted Server — light and dark), and which one the Install button targets per store. |
+| **Reviews** | Ratings, star distribution and reviews with the developer's response. |
+| **More by this developer** | Other apps from the same developer on every app page. |
+| **Filters** | Zigbee, Z-Wave, Matter, Bluetooth, 433 MHz, infrared, Wi-Fi, cloud, with widgets; sort by name. |
+| **Older versions** | Install any earlier version from the version history (Homey Pro). |
+| **Manage apps** | Restart, automatic updates on/off, crashed apps, update badge — and your own developer apps. |
+| **Links** | `homeystore://app/<id>`, pasted homey.app links or app IDs open the app directly. |
+| **iPad** | Sidebar (iOS 18), columns and readable widths. |
 | **Accounts** | Log in like Homey Dev (Homey login or Personal Access Token), multiple saved accounts, quick switching, sign out. |
 
 ## Design
@@ -70,13 +82,17 @@ The app icon and splash take their cue from the Homey App Store header on homey.
 - **App icons:** like homey.app, the app's SVG icon as a white mask on its brand colour — drawn on a canvas, exported as a 3× PNG and cached; falls back to the app photo. Private and CLI-installed apps use the icon served by your Homey.
 - **Homey images:** `modelImage.light` / `modelImage.dark` from your account's Homeys, the same images my.homey.app uses.
 
+## Tests
+
+Unit tests (target `HomeyAppStoreTests`) cover parsing of the store and Homey data, the update logic and links: **Product → Test** (⌘U).
+
 ## Build
 
 1. Open `HomeyAppStore.xcodeproj` in Xcode 16 or newer.
 2. Select your team under *Signing & Capabilities* (bundle id `nl.lrvdlinden.homeyappstore`).
 3. Run on an iPhone/iPad or simulator with iOS 17+.
 
-Version **0.0.1**, build **0.0.4** (`MARKETING_VERSION` / `CURRENT_PROJECT_VERSION`).
+Version **1.0.1**, build **0.0.5** (`MARKETING_VERSION` / `CURRENT_PROJECT_VERSION`).
 
 ## Releases
 

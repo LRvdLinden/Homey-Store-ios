@@ -19,11 +19,19 @@ enum Config {
         URL(string: "https://homey.app/a/\(appId)/\(test ? "test/" : "")")!
     }
 
+    /// The language the app's UI is shown in (Dutch until a translation is added).
+    /// Store content and dates follow it, so a screen never mixes languages.
+    static let uiLanguage: String = {
+        let lang = Bundle.main.preferredLocalizations.first ?? "nl"
+        return String(lang.prefix(2))
+    }()
+
+    static var appLocale: Locale { Locale(identifier: uiLanguage == "nl" ? "nl_NL" : uiLanguage) }
+
     /// Language for app names/descriptions from the store.
     static var storeLanguage: String {
         let supported = ["en", "nl", "de", "fr", "it", "sv", "no", "es", "da", "ru", "pl", "ko", "ar"]
-        let lang = Locale.current.language.languageCode?.identifier ?? "en"
-        return supported.contains(lang) ? lang : "en"
+        return supported.contains(uiLanguage) ? uiLanguage : "en"
     }
 }
 

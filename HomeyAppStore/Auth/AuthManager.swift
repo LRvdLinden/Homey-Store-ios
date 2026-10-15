@@ -51,6 +51,10 @@ final class AuthManager {
 
     @ObservationIgnored private var delegated: [String: (token: String, expires: Date?)] = [:]
     @ObservationIgnored private var refreshTask: Task<Void, Error>?
+    /// One running delegation-token request per audience, shared by all callers.
+    @ObservationIgnored private var delegationTasks: [String: Task<String, Error>] = [:]
+    /// When the last web-session refresh failed; we don't retry for a while.
+    @ObservationIgnored private var refreshFailedAt: Date?
 
     private enum Keys {
         static let accounts = "store.accounts.v1"
@@ -66,13 +70,9 @@ final class AuthManager {
     var active: StoredAccount? { accounts.first { $0.id == activeID } }
     var isLoggedIn: Bool { active != nil }
     var otherAccounts: [StoredAccount] { accounts.filter { $0.id != activeID }.sorted { $0.lastUsed > $1.lastUsed } }
-    var loginMethodLabel: String { active?.methodLabel ?? L("Niet ingelogd") }
-
-    /// Session to put into the in-app Developer Tools website for the active account.
-    var activeWebSession: WebSession? {
-        if case .web(let s) = active?.credential { return s }
-        return nil
-    }
+    /// Whether the account's token is usable for optional extras (the private part of
+    /// the store catalogue). False while the session is known to be expired.
+    var hasUsableSession: Bool { active != nil && active?.needsLogin != true }
 
     // MARK: Adding accounts
 
@@ -93,14 +93,6 @@ final class AuthManager {
         let pat = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !pat.isEmpty else { throw APIError(status: 0, message: L("Vul een Personal Access Token in."), url: "") }
         return try await verify(credential: .pat(pat))
-    }
-
-    func addWebAccount(_ session: WebSession) async throws {
-        commit(try await verifyWebAccount(session))
-    }
-
-    func addPATAccount(_ raw: String) async throws {
-        commit(try await verifyPATAccount(raw))
     }
 
     /// Saves a verified account and makes it the active one.
@@ -153,7 +145,10 @@ final class AuthManager {
         activeID = id
         generation += 1
         delegated.removeAll()
+        delegationTasks.values.forEach { $0.cancel() }
+        delegationTasks.removeAll()
         refreshTask = nil
+        refreshFailedAt = nil
         if let i = accounts.firstIndex(where: { $0.id == id }) { accounts[i].lastUsed = Date() }
         UserDefaults.standard.set(id, forKey: Keys.active)
     }
@@ -164,7 +159,9 @@ final class AuthManager {
         if activeID == id {
             user = .null
             delegated.removeAll()
+            delegationTasks.removeAll()
             activeID = nil
+            generation += 1
             if let next = accounts.sorted(by: { $0.lastUsed > $1.lastUsed }).first { activate(next.id); Task { try? await loadUser() } }
             else { UserDefaults.standard.removeObject(forKey: Keys.active) }
         }
@@ -181,14 +178,6 @@ final class AuthManager {
         save()
     }
 
-    /// Called by the in-app website when it rotated tokens for the active account.
-    func adoptWebSession(_ session: WebSession) {
-        guard session.hasToken, case .web(let current) = active?.credential, current != session else { return }
-        if !session.userId.isEmpty, session.userId != activeID { return }
-        updateActive { $0.credential = .web(session); $0.needsLogin = false }
-        delegated.removeAll()
-    }
-
     // MARK: Tokens
 
     func accessToken() throws -> String {
@@ -198,6 +187,9 @@ final class AuthManager {
 
     private func refreshActive() async throws {
         if let refreshTask { return try await refreshTask.value }
+        if let failed = refreshFailedAt, Date().timeIntervalSince(failed) < 300 {
+            throw APIError(status: 401, message: L("Je sessie is verlopen. Log opnieuw in."), url: "")
+        }
         guard case .web(let session) = active?.credential else {
             throw APIError(status: 401, message: L("Token ongeldig of ingetrokken. Voeg het account opnieuw toe."), url: "")
         }
@@ -208,13 +200,18 @@ final class AuthManager {
                 guard self.activeID == id else { return }
                 self.updateActive { $0.credential = .web(new); $0.needsLogin = false }
                 self.delegated.removeAll()
+                self.refreshFailedAt = nil
             } catch {
-                if self.activeID == id { self.updateActive { $0.needsLogin = true } }
+                if self.activeID == id {
+                    self.updateActive { $0.needsLogin = true }
+                    self.refreshFailedAt = Date()
+                }
                 throw error
             }
         }
         refreshTask = task
-        defer { refreshTask = nil }
+        // Only clear our own task: an account switch may already have started a new one.
+        defer { if self.refreshTask == task { self.refreshTask = nil } }
         try await task.value
     }
 
@@ -245,13 +242,25 @@ final class AuthManager {
                 $0.avatar = Self.avatar(me)
             }
         } catch {
-            userError = error.localizedDescription
+            userError = ErrorText.message(error)
             throw error
         }
     }
 
     func delegationToken(audience: String) async throws -> String {
         if let cached = delegated[audience], (cached.expires ?? .distantFuture) > Date() { return cached.token }
+        if let running = delegationTasks[audience] { return try await running.value }
+        let gen = generation
+        let task = Task { @MainActor () throws -> String in try await self.fetchDelegationToken(audience: audience) }
+        delegationTasks[audience] = task
+        defer { if self.delegationTasks[audience] == task { self.delegationTasks[audience] = nil } }
+        let token = try await task.value
+        guard gen == generation else { throw CancellationError() }   // account changed meanwhile
+        delegated[audience] = (token, JWT.expiry(token))
+        return token
+    }
+
+    private func fetchDelegationToken(audience: String) async throws -> String {
         let resp = try await athom("/delegation/token?audience=\(audience)", method: "POST", json: .object([:]))
         let token: String
         switch resp {
@@ -259,7 +268,6 @@ final class AuthManager {
         default: token = resp.firstString("token", "access_token")
         }
         guard !token.isEmpty else { throw APIError(status: 0, message: L("Geen delegation token ontvangen (\(audience))."), url: "delegation/token") }
-        delegated[audience] = (token, JWT.expiry(token))
         return token
     }
 
@@ -280,7 +288,6 @@ final class AuthManager {
     var displayName: String { user.isNull ? (active?.name ?? "") : Self.displayName(user) }
     var email: String { user.isNull ? (active?.email ?? "") : user.firstString("email") }
     var avatarURL: URL? { URL(string: user.isNull ? (active?.avatar ?? "") : Self.avatar(user)) }
-    var firstName: String { user["firstname"].string ?? displayName.split(separator: " ").first.map(String.init) ?? "" }
 
     /// Homeys linked to the account (same source as Developer Tools: `user.homeys`).
     var homeys: [HomeyRef] {

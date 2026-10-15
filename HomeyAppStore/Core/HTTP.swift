@@ -5,16 +5,75 @@ struct APIError: LocalizedError, Sendable {
     let message: String
     let url: String
 
+    /// Underlying network error code (offline, timeout, …) when the request never got an answer.
+    var urlErrorCode: URLError.Code? = nil
+
+    init(status: Int, message: String, url: String, urlErrorCode: URLError.Code? = nil) {
+        self.status = status
+        self.message = message
+        self.url = url
+        self.urlErrorCode = urlErrorCode
+    }
+
     var errorDescription: String? {
         status == 0 ? message : "HTTP \(status): \(message)"
     }
     var isUnauthorized: Bool { status == 401 }
+    var isCancelled: Bool { urlErrorCode == .cancelled }
+    var isOffline: Bool {
+        guard let urlErrorCode else { return false }
+        return [.notConnectedToInternet, .networkConnectionLost, .dataNotAllowed, .internationalRoamingOff].contains(urlErrorCode)
+    }
+}
+
+/// Plain Dutch text for any error; `nil` for cancelled requests (those are silent).
+enum ErrorText {
+    static func message(_ error: Error) -> String? {
+        if error is CancellationError { return nil }
+        if let e = error as? APIError {
+            if e.isCancelled { return nil }
+            if let code = e.urlErrorCode { return network(code) }
+            switch e.status {
+            case 401: return L("Je sessie is verlopen. Log opnieuw in.")
+            case 403: return L("Je hebt hier geen toestemming voor.")
+            case 404: return L("Niet gevonden.")
+            case 429: return L("Te veel verzoeken. Probeer het zo opnieuw.")
+            case 500...599: return L("De server van Homey heeft een probleem. Probeer het later opnieuw.")
+            default: return e.message.isEmpty ? L("Er ging iets mis.") : e.message
+            }
+        }
+        if let u = error as? URLError {
+            if u.code == .cancelled { return nil }
+            return network(u.code)
+        }
+        return error.localizedDescription
+    }
+
+    private static func network(_ code: URLError.Code) -> String {
+        switch code {
+        case .notConnectedToInternet, .dataNotAllowed, .internationalRoamingOff: return L("Je bent offline. Controleer je internetverbinding.")
+        case .networkConnectionLost: return L("De verbinding werd verbroken. Probeer het opnieuw.")
+        case .timedOut: return L("Het duurde te lang voordat er antwoord kwam. Probeer het opnieuw.")
+        case .cannotFindHost, .cannotConnectToHost, .dnsLookupFailed: return L("Kan de server niet bereiken.")
+        case .secureConnectionFailed, .serverCertificateUntrusted: return L("Kon geen veilige verbinding maken.")
+        default: return L("Netwerkfout. Probeer het opnieuw.")
+        }
+    }
 }
 
 enum HTTP {
     static let session: URLSession = {
         let cfg = URLSessionConfiguration.default
         cfg.timeoutIntervalForRequest = 20
+        cfg.timeoutIntervalForResource = 600
+        cfg.waitsForConnectivity = false
+        return URLSession(configuration: cfg)
+    }()
+
+    /// For calls that may legitimately take minutes (installing a big app with `waitForInstall`).
+    static let longSession: URLSession = {
+        let cfg = URLSessionConfiguration.default
+        cfg.timeoutIntervalForRequest = 300
         cfg.timeoutIntervalForResource = 600
         cfg.waitsForConnectivity = false
         return URLSession(configuration: cfg)
@@ -39,7 +98,7 @@ enum HTTP {
         if let timeout { req.timeoutInterval = timeout }
         req.httpMethod = method
         req.setValue("application/json", forHTTPHeaderField: "Accept")
-        req.setValue("HomeyAppStore-iOS/0.0.1", forHTTPHeaderField: "User-Agent")
+        req.setValue("HomeyStore-iOS/\(Config.appVersion) (\(Config.appBuild))", forHTTPHeaderField: "User-Agent")
         for (k, v) in headers { req.setValue(v, forHTTPHeaderField: k) }
         if let body {
             req.httpBody = body
@@ -49,9 +108,12 @@ enum HTTP {
         }
         let (data, resp): (Data, URLResponse)
         do {
-            (data, resp) = try await session.data(for: req)
+            let s = (timeout ?? 0) > 20 ? longSession : session
+            (data, resp) = try await s.data(for: req)
         } catch {
-            throw APIError(status: 0, message: error.localizedDescription, url: url.absoluteString)
+            let code = (error as? URLError)?.code ?? (error is CancellationError ? .cancelled : nil)
+            throw APIError(status: 0, message: ErrorText.message(URLError(code ?? .unknown)) ?? error.localizedDescription,
+                           url: url.absoluteString, urlErrorCode: code)
         }
         let http = resp as? HTTPURLResponse
         let status = http?.statusCode ?? 0

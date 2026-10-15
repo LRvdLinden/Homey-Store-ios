@@ -8,9 +8,10 @@ struct TodayView: View {
     var body: some View {
         NavigationStack {
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: 28) {
-                    header
-
+                header
+                    .padding(.horizontal, 20)
+                // One column on iPhone, two or three on iPad.
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 340), spacing: 24, alignment: .top)], alignment: .leading, spacing: 28) {
                     if let error = store.highlightsError[store.platform], store.current.isEmpty {
                         ErrorBanner(message: error) { Task { await store.loadHighlights(auth: auth, force: true) } }
                     } else if store.current.isEmpty {
@@ -49,6 +50,7 @@ struct TodayView: View {
                     }
                 }
                 .padding(.horizontal, 20)
+                .padding(.top, 20)
                 .padding(.bottom, 30)
             }
             .refreshable { await store.loadHighlights(auth: auth, force: true) }
@@ -61,7 +63,7 @@ struct TodayView: View {
     private var header: some View {
         HStack(alignment: .bottom) {
             VStack(alignment: .leading, spacing: 2) {
-                Text(Date.now.formatted(.dateTime.weekday(.wide).day().month(.wide)).uppercased())
+                Text(Date.now.formatted(.dateTime.weekday(.wide).day().month(.wide).locale(Config.appLocale)).uppercased())
                     .font(.footnote.weight(.semibold)).foregroundStyle(.secondary)
                 Text(L("Vandaag")).font(.largeTitle.weight(.bold))
             }
@@ -87,7 +89,7 @@ struct TodayHeroCard: View {
                     .overlay(alignment: .topLeading) {
                         VStack(alignment: .leading, spacing: 4) {
                             Text(eyebrow.uppercased()).font(.subheadline.weight(.semibold)).opacity(0.85)
-                            Text(title).font(.system(size: 28, weight: .bold)).lineLimit(3)
+                            Text(title).font(.title.weight(.bold)).lineLimit(3)
                                 .multilineTextAlignment(.leading)
                         }
                         .foregroundStyle(.white)

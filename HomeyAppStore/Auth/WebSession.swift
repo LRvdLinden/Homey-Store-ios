@@ -30,16 +30,6 @@ enum WebSessionBridge {
         return WKUserScript(source: js, injectionTime: .atDocumentStart, forMainFrameOnly: true)
     }
 
-    /// Reads the current session from a web view showing Developer Tools.
-    @MainActor
-    static func readSession(from webView: WKWebView) async -> WebSession? {
-        guard webView.url?.host() == host else { return nil }
-        let raw = try? await webView.callAsyncJavaScript("return localStorage.getItem('\(storageKey)');", contentWorld: .page) as? String
-        guard let raw else { return nil }
-        let s = WebSession(store: raw)
-        return s.hasToken ? s : nil
-    }
-
     /// Lets the website itself refresh the token (it owns the OAuth client), in an
     /// isolated, invisible web view, and returns the updated session.
     @MainActor

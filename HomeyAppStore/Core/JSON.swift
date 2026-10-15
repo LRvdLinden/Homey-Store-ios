@@ -49,8 +49,6 @@ enum JSON: Hashable, Sendable {
         return (try? JSONSerialization.data(withJSONObject: anyValue, options: opts)) ?? Data()
     }
 
-    var prettyString: String { String(data: data(pretty: true), encoding: .utf8) ?? "" }
-
     subscript(key: String) -> JSON {
         if case .object(let o) = self { return o[key] ?? .null }
         return .null
@@ -109,7 +107,7 @@ enum JSON: Hashable, Sendable {
         switch self {
         case .string(let s): return s
         case .object(let o):
-            let lang = Locale.current.language.languageCode?.identifier ?? "en"
+            let lang = Config.uiLanguage
             return o[lang]?.string ?? o["en"]?.string ?? o["nl"]?.string ?? o.values.compactMap(\.string).first ?? ""
         default: return string ?? ""
         }
@@ -158,10 +156,4 @@ enum DateParsing {
     static func parse(_ s: String) -> Date? {
         iso.date(from: s) ?? isoNoFrac.date(from: s) ?? Double(s).map { Date(timeIntervalSince1970: $0 > 1e11 ? $0 / 1000 : $0) }
     }
-}
-
-/// The localized "title" of a Homey object, or its id when it has none.
-func titleOrID(_ json: JSON) -> String {
-    let title: String = json["title"].localized
-    return title.isEmpty ? json.firstString("id") : title
 }

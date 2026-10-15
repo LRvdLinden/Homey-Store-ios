@@ -155,7 +155,7 @@ struct WebLoginSheet: View {
             pending = try await auth.verifyWebAccount(session)
         } catch {
             saving = false
-            self.error = error.localizedDescription
+            self.error = ErrorText.message(error)
             return
         }
         // Close the login sheet (and the "add account" screen) first, then
@@ -301,7 +301,7 @@ struct PATLoginSheet: View {
                     onDone()
                 }
             } catch {
-                self.error = error.localizedDescription
+                self.error = ErrorText.message(error)
             }
         }
     }

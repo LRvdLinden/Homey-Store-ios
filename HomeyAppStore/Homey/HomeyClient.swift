@@ -1,16 +1,25 @@
 import Foundation
 
 /// An app installed on a Homey (`GET /api/manager/apps/app/`).
+/// Field meanings follow my.homey.app: `channel` is `live`/`test`/`beta`,
+/// `origin` is `appstore` for store installs (`devkit_run`/`devkit_install` for the CLI).
 struct InstalledApp: Identifiable, Hashable, Sendable {
     let id: String
     let name: String
     let version: String
-    /// `appstore_release`, `appstore_test`, `devkit_install`, …
     let origin: String
     let channel: String
     let enabled: Bool
     let autoUpdate: Bool
     let brandColor: String
+    /// `running`, `starting`, `stopped`, `crashed`, …
+    let state: String
+    let crashed: Bool
+    let crashedMessage: String
+    /// Version Homey itself says is ready to install (Homey Pro), if any.
+    let updateVersion: String?
+    /// New permissions the update asks for.
+    let updatePermissions: [String]
     /// Icon path on the Homey, e.g. `/app/<id>/assets/icon.svg`.
     let iconPath: String
 
@@ -23,20 +32,29 @@ struct InstalledApp: Identifiable, Hashable, Sendable {
         channel = j.firstString("channel")
         enabled = j["enabled"].bool ?? true
         autoUpdate = j["autoupdate"].bool ?? false
-        brandColor = j.firstString("brandColor")
+        brandColor = j.firstString("color", "brandColor")
+        state = j.firstString("state")
+        crashed = j["crashed"].bool ?? (j.firstString("state") == "crashed")
+        crashedMessage = j.firstString("crashedMessage")
+        let upd = j["updateAvailable"]
+        let updVersion = upd.isContainer ? upd.firstString("version") : ""
+        updateVersion = updVersion.isEmpty ? nil : updVersion
+        updatePermissions = upd["permissions"].array.compactMap(\.string)
         let iconObj = j["iconObj"]
         let path = iconObj.isContainer ? iconObj.firstString("url") : j.firstString("icon")
         iconPath = path.isEmpty ? "/app/\(id)/assets/icon.svg" : path
     }
 
-    var isTest: Bool { origin.contains("test") || channel == "test" }
+    var isTest: Bool { channel == "test" || channel == "beta" }
+    var isFromStore: Bool { origin.isEmpty || origin == "appstore" }
+    var isDevkit: Bool { !isFromStore }
+    var installedChannel: InstallChannel { isTest ? .test : .live }
 
     func iconURL(on homey: HomeyRef) -> URL? {
         if iconPath.hasPrefix("http") { return URL(string: iconPath) }
         let base = homey.remoteURL.absoluteString.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
         return URL(string: base + (iconPath.hasPrefix("/") ? iconPath : "/" + iconPath))
     }
-    var isDevkit: Bool { origin.contains("devkit") }
 
     var originLabel: String {
         if isDevkit { return L("Ontwikkelversie (CLI)") }
@@ -58,22 +76,36 @@ final class HomeyClient {
     let homey: HomeyRef
     private let auth: AuthManager
     private var session: String?
+    private var loginTask: Task<String, Error>?
 
     init(homey: HomeyRef, auth: AuthManager) {
         self.homey = homey
         self.auth = auth
     }
 
+    /// Restart, auto-update and installing a specific version exist on Homey Pro
+    /// (and Self-Hosted Server), not on Homey Cloud.
+    var supportsAppManagement: Bool { !homey.isCloud }
+
     private func login() async throws -> String {
         if let session { return session }
-        let delegation = try await auth.delegationToken(audience: "homey")
-        let resp = try await HTTP.send(
-            homey.remoteURL.appendingPathComponent("api/manager/users/login"),
-            method: "POST",
-            body: JSON.object(["token": .string(delegation)]).data()
-        ).json
-        let token = resp.string ?? resp.firstString("token", "session")
-        guard !token.isEmpty else { throw APIError(status: 0, message: L("Geen Homey-sessie ontvangen."), url: homey.remoteURL.absoluteString) }
+        if let loginTask { return try await loginTask.value }
+        let task = Task { @MainActor () throws -> String in
+            let delegation = try await self.auth.delegationToken(audience: "homey")
+            let resp = try await HTTP.send(
+                self.homey.remoteURL.appendingPathComponent("api/manager/users/login"),
+                method: "POST",
+                body: JSON.object(["token": .string(delegation)]).data()
+            ).json
+            let token = resp.string ?? resp.firstString("token", "session")
+            guard !token.isEmpty else {
+                throw APIError(status: 0, message: L("Geen Homey-sessie ontvangen."), url: self.homey.remoteURL.absoluteString)
+            }
+            return token
+        }
+        loginTask = task
+        defer { loginTask = nil }
+        let token = try await task.value
         session = token
         return token
     }
@@ -93,20 +125,40 @@ final class HomeyClient {
         }
     }
 
+    private func enc(_ id: String) -> String {
+        id.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed.subtracting(CharacterSet(charactersIn: "/"))) ?? id
+    }
+
     func installedApps() async throws -> [InstalledApp] {
         try await request("/api/manager/apps/app/").items.compactMap(InstalledApp.init)
     }
 
-    /// ManagerApps.installFromAppStore — `channel` "test" installs the test version.
-    func install(appId: String, channel: InstallChannel) async throws {
-        var body: [String: JSON] = ["id": .string(appId)]
-        if channel == .test { body["channel"] = .string("test") }
-        if !homey.isCloud { body["waitForInstall"] = .bool(true) }
-        _ = try await request("/api/manager/apps/store", method: "POST", json: .object(body), timeout: 180)
+    /// ManagerApps.installFromAppStore. `channel` "test" installs the test version;
+    /// `version` (Homey Pro only) installs that exact version.
+    func install(appId: String, channel: InstallChannel, version: String? = nil) async throws {
+        var body: [String: JSON] = ["id": .string(appId), "channel": .string(channel.rawValue)]
+        if supportsAppManagement {
+            body["waitForInstall"] = .bool(true)
+            if let version, !version.isEmpty { body["version"] = .string(version) }
+        }
+        do {
+            _ = try await request("/api/manager/apps/store", method: "POST", json: .object(body), timeout: 240)
+        } catch let e as APIError where e.status == 400 && channel == .live {
+            // Older firmware may not accept an explicit "live" channel; live is the default.
+            body["channel"] = nil
+            _ = try await request("/api/manager/apps/store", method: "POST", json: .object(body), timeout: 240)
+        }
     }
 
     func uninstall(appId: String) async throws {
-        let enc = appId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? appId
-        _ = try await request("/api/manager/apps/app/\(enc)", method: "DELETE", timeout: 60)
+        _ = try await request("/api/manager/apps/app/\(enc(appId))", method: "DELETE", timeout: 60)
+    }
+
+    func restart(appId: String) async throws {
+        _ = try await request("/api/manager/apps/app/\(enc(appId))/restart", method: "POST", timeout: 60)
+    }
+
+    func setAutoUpdate(appId: String, _ on: Bool) async throws {
+        _ = try await request("/api/manager/apps/app/\(enc(appId))", method: "PUT", json: .object(["autoupdate": .bool(on)]))
     }
 }

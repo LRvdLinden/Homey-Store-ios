@@ -16,7 +16,10 @@ struct AppDetailView: View {
     @State private var error: String?
     @State private var expandReadme = false
     @State private var installChannel: InstallChannel?
+    @State private var rollbackVersion: String?
     @State private var showLogin = false
+    @State private var reviews: [StoreReview] = []
+    @State private var authorApps: [StoreApp] = []
 
     private var build: StoreBuild? { detail?.primaryBuild }
     private var target: HomeyRef? { library.target(for: store.platform, auth: auth) }
@@ -39,28 +42,36 @@ struct AppDetailView: View {
                     ErrorBanner(message: error) { Task { await load() } }.padding(20)
                 }
 
-                if let latest = changelog.first ?? build.map({ ChangelogEntry(version: $0.version, state: "live", text: $0.changelog, date: $0.stateChangedAt) }) {
+                if let latest = changelog.first(where: { $0.state == "live" }) ?? changelog.first ?? build.map({ ChangelogEntry(version: $0.version, state: "live", text: $0.changelog, date: $0.stateChangedAt) }) {
                     whatsNew(latest)
                 }
 
                 preview
 
                 if let build, !(build.readme.isEmpty && build.description.isEmpty) {
+                    let text = build.readme.isEmpty ? build.description : build.readme
                     section(nil) {
-                        Text(build.readme.isEmpty ? build.description : build.readme)
+                        Text(text)
                             .font(.body)
                             .lineLimit(expandReadme ? nil : 4)
-                        if !expandReadme && build.readme.count > 180 {
+                        // Long, or several lines: offer "meer" so nothing stays cut off.
+                        if !expandReadme && (text.count > 160 || text.filter(\.isNewline).count >= 3) {
                             Button(L("meer")) { withAnimation { expandReadme = true } }.font(.body)
                         }
                     }
                 }
+
+                reviewsSection
 
                 if let detail, detail.hasTest, let test = detail.testBuild {
                     testSection(detail, test)
                 }
 
                 if let build { worksWith(build) }
+
+                if let build, !build.widgets.isEmpty { widgetsSection(build) }
+
+                moreByDeveloper
 
                 if let build, let detail { information(detail, build) }
 
@@ -69,6 +80,7 @@ struct AppDetailView: View {
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 24)
             }
+            .readableWidth(760)
         }
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
@@ -76,7 +88,7 @@ struct AppDetailView: View {
                 StoreAppIcon(url: app.iconURL ?? build?.iconURL, brandColor: brandColor, name: app.name, size: 28, fallbackURL: build?.imageSmallURL ?? app.smallImageURL)
             }
             ToolbarItem(placement: .topBarTrailing) {
-                ShareLink(item: Config.storePage(app.id)) { Image(systemName: "square.and.arrow.up") }
+                ShareLink(item: Config.storePage(app.id), preview: sharePreview) { Image(systemName: "square.and.arrow.up") }
             }
         }
         .task(id: app.id) { await load() }
@@ -86,10 +98,23 @@ struct AppDetailView: View {
                 .presentationDetents([.medium, .large])
                 .presentationDragIndicator(.visible)
         }
+        .sheet(item: Binding(get: { rollbackVersion.map(VersionPick.init) }, set: { rollbackVersion = $0?.id })) { pick in
+            InstallSheet(appId: app.id, version: pick.id)
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
+        }
         .fullScreenCover(isPresented: $showLogin) { LoginView(allowClose: true) }
     }
 
     private var brandColor: String { app.brandColor.isEmpty ? (build?.brandColor ?? "") : app.brandColor }
+
+    private var sharePreview: SharePreview<Image, Never> {
+        let name = detail?.name ?? app.name
+        if let img = AppIconRenderer.shared.cached(app.iconURL ?? build?.iconURL, color: brandColor) {
+            return SharePreview(name, image: Image(uiImage: img))
+        }
+        return SharePreview(name, image: Image("StoreIcon"))
+    }
 
     private func load(force: Bool = false) async {
         if let d = await store.detail(app.id, auth: auth, force: force) {
@@ -97,8 +122,108 @@ struct AppDetailView: View {
         } else if detail == nil {
             error = L("Kon de app niet laden.")
         }
-        changelog = (try? await StoreAPI(auth: auth).changelog(app.id)) ?? changelog
+        let api = StoreAPI(auth: auth)
+        let id = app.id
+        let authorId = detail?.authorId ?? ""
+        async let log = try? api.changelog(id)
+        async let revs = try? api.reviews(id)
+        async let more = try? api.apps(byAuthor: authorId)
+        changelog = await log ?? changelog
+        reviews = await revs ?? reviews
+        authorApps = (await more ?? authorApps).filter { $0.id != id }
         if let target { await library.refresh(target, auth: auth, force: force) }
+    }
+
+    /// Installing a specific version is possible on Homey Pro, when logged in.
+    private var canPickVersion: Bool {
+        auth.isLoggedIn && (target.map { !$0.isCloud && $0.canInstall } ?? false)
+    }
+
+    // MARK: Ratings & reviews
+
+    @ViewBuilder private var reviewsSection: some View {
+        if !reviews.isEmpty {
+            let summary = ReviewSummary(reviews)
+            section(L("Beoordelingen en recensies")) {
+                HStack(alignment: .center, spacing: 18) {
+                    VStack(spacing: 0) {
+                        Text(String(format: "%.1f", summary.average))
+                            .font(.system(.largeTitle, design: .rounded).weight(.bold))
+                        Text(L("van 5")).font(.footnote.weight(.semibold)).foregroundStyle(.secondary)
+                    }
+                    VStack(alignment: .trailing, spacing: 3) {
+                        ForEach(Array(summary.distribution.enumerated()), id: \.offset) { i, share in
+                            HStack(spacing: 6) {
+                                Text(String(repeating: "★", count: 5 - i)).font(.system(size: 8)).foregroundStyle(.secondary)
+                                GeometryReader { geo in
+                                    ZStack(alignment: .leading) {
+                                        Capsule().fill(Theme.pill)
+                                        Capsule().fill(Color.secondary).frame(width: geo.size.width * share)
+                                    }
+                                }
+                                .frame(height: 4)
+                            }
+                        }
+                        Text(L("\(summary.count) beoordelingen")).font(.footnote).foregroundStyle(.secondary)
+                    }
+                }
+                ScrollView(.horizontal, showsIndicators: false) {
+                    LazyHStack(spacing: 12) {
+                        ForEach(reviews.filter { !$0.comment.isEmpty }.prefix(10)) { r in
+                            ReviewCard(review: r)
+                                .containerRelativeFrame(.horizontal) { w, _ in min(w - 40, 340) }
+                        }
+                    }
+                    .scrollTargetLayout()
+                }
+                .scrollTargetBehavior(.viewAligned)
+                if reviews.count > 1 {
+                    NavigationLink {
+                        ReviewListView(reviews: reviews)
+                    } label: {
+                        Text(L("Bekijk alle recensies")).font(.body)
+                    }
+                }
+            }
+        }
+    }
+
+    // MARK: More by the developer
+
+    @ViewBuilder private var moreByDeveloper: some View {
+        if !authorApps.isEmpty {
+            section(L("Meer van \(detail?.authorName ?? app.authorName)")) {
+                VStack(spacing: 0) {
+                    ForEach(authorApps.prefix(6)) { a in
+                        AppRow(app: a, iconSize: 52)
+                        if a.id != authorApps.prefix(6).last?.id { Divider().padding(.leading, 64) }
+                    }
+                }
+                if authorApps.count > 6 {
+                    NavigationLink {
+                        AppListView(title: detail?.authorName ?? app.authorName, apps: authorApps)
+                    } label: {
+                        Text(L("Bekijk alles")).font(.body)
+                    }
+                }
+            }
+        }
+    }
+
+    // MARK: Widgets
+
+    private func widgetsSection(_ b: StoreBuild) -> some View {
+        section(L("Widgets")) {
+            FlowLayout(spacing: 8) {
+                ForEach(b.widgets, id: \.self) { w in
+                    Label(w, systemImage: "rectangle.3.group")
+                        .font(.subheadline)
+                        .padding(.horizontal, 12).padding(.vertical, 6)
+                        .background(Theme.pill, in: Capsule())
+                }
+            }
+            Text(L("Te gebruiken op je Homey-dashboards.")).font(.footnote).foregroundStyle(.secondary)
+        }
     }
 
     // MARK: Header
@@ -112,7 +237,7 @@ struct AppDetailView: View {
                     .font(.subheadline).foregroundStyle(.secondary).lineLimit(2)
                 Spacer(minLength: 8)
                 HStack {
-                    GetButton(appId: app.id, name: app.name, prominent: true)
+                    GetButton(appId: app.id, name: detail?.name ?? app.name, prominent: true)
                     Spacer()
                     if let detail, !detail.supports(store.platform) {
                         Label(L("Niet voor \(store.platform.title)"), systemImage: "exclamationmark.circle")
@@ -159,7 +284,7 @@ struct AppDetailView: View {
                 installChannel = .test
             } label: {
                 Text(installed?.isTest == true && installed?.version == d.testVersion ? L("KLAAR") : L("TEST"))
-                    .font(.system(size: 13, weight: .bold))
+                    .font(.footnote.weight(.bold))
                     .foregroundStyle(Theme.testOrange)
                     .padding(.horizontal, 14).frame(minHeight: 28)
                     .background(Theme.testOrange.opacity(0.15), in: Capsule())
@@ -293,7 +418,9 @@ struct AppDetailView: View {
             if !latest.text.isEmpty { Text(latest.text).font(.body) }
             if changelog.count > 1 {
                 NavigationLink {
-                    VersionHistoryView(entries: changelog)
+                    VersionHistoryView(entries: changelog,
+                                       installedVersion: installed?.version,
+                                       onInstall: canPickVersion ? { rollbackVersion = $0 } : nil)
                 } label: {
                     Text(L("Versiegeschiedenis")).font(.body)
                 }
@@ -313,14 +440,11 @@ struct AppDetailView: View {
     }
 
     @ViewBuilder private func worksWith(_ b: StoreBuild) -> some View {
-        if !b.driverNames.isEmpty || b.widgetCount > 0 {
+        if !b.drivers.isEmpty || b.widgetCount > 0 {
             section(L("Werkt met")) {
-                FlowLayout(spacing: 8) {
-                    ForEach(Array(Set(b.driverNames)).sorted(), id: \.self) { name in
-                        Text(name)
-                            .font(.subheadline)
-                            .padding(.horizontal, 12).padding(.vertical, 6)
-                            .background(Theme.pill, in: Capsule())
+                ScrollView(.horizontal, showsIndicators: false) {
+                    LazyHStack(alignment: .top, spacing: 12) {
+                        ForEach(b.drivers) { d in DriverTile(driver: d) }
                     }
                 }
                 HStack(spacing: 16) {
@@ -404,12 +528,111 @@ struct StarRow: View {
                 Image(systemName: rating >= Double(i) + 0.75 ? "star.fill" : rating >= Double(i) + 0.25 ? "star.leadinghalf.filled" : "star")
             }
         }
-        .font(.system(size: 9))
+        .font(.caption2)
+        .imageScale(.small)
+    }
+}
+
+struct VersionPick: Identifiable { let id: String }
+
+/// A supported device with its product photo.
+struct DriverTile: View {
+    let driver: StoreDriver
+    @ScaledMetric private var side: CGFloat = 96
+
+    var body: some View {
+        VStack(spacing: 6) {
+            RemoteImage(url: driver.imageURL) {
+                Image(systemName: "shippingbox").font(.title2).foregroundStyle(.tertiary)
+            }
+            .frame(width: side, height: side)
+            .padding(8)
+            .background(Color.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(Color.primary.opacity(0.08)))
+            Text(driver.name)
+                .font(.caption)
+                .multilineTextAlignment(.center)
+                .lineLimit(2)
+                .frame(width: side + 16)
+            if !driver.connectivity.isEmpty {
+                Text(driver.connectivity.map { $0.uppercased() }.joined(separator: " · "))
+                    .font(.caption2).foregroundStyle(.secondary).lineLimit(1)
+                    .frame(width: side + 16)
+            }
+        }
+    }
+}
+
+struct ReviewCard: View {
+    let review: StoreReview
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                StarRow(rating: Double(review.rating)).foregroundStyle(.orange)
+                Spacer()
+                if let d = review.date {
+                    Text(d, format: .dateTime.day().month(.abbreviated).year()).font(.caption).foregroundStyle(.secondary)
+                }
+            }
+            Text(review.userName).font(.subheadline.weight(.semibold))
+            if !review.comment.isEmpty {
+                Text(review.comment).font(.subheadline).lineLimit(4)
+            }
+            if !review.response.isEmpty {
+                Text(L("Reactie ontwikkelaar")).font(.caption.weight(.semibold)).foregroundStyle(.secondary).padding(.top, 2)
+                Text(review.response).font(.caption).foregroundStyle(.secondary).lineLimit(3)
+            }
+            Spacer(minLength: 0)
+            if !review.version.isEmpty {
+                Text("v\(review.version)").font(.caption2).foregroundStyle(.tertiary)
+            }
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, minHeight: 150, alignment: .topLeading)
+        .background(Theme.card, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(Color.primary.opacity(0.06)))
+    }
+}
+
+struct ReviewListView: View {
+    let reviews: [StoreReview]
+
+    var body: some View {
+        List(reviews) { r in
+            VStack(alignment: .leading, spacing: 6) {
+                HStack {
+                    StarRow(rating: Double(r.rating)).foregroundStyle(.orange)
+                    Text(r.userName).font(.subheadline.weight(.semibold))
+                    Spacer()
+                    if let d = r.date { Text(d, format: .dateTime.day().month().year()).font(.caption).foregroundStyle(.secondary) }
+                }
+                if !r.comment.isEmpty { Text(r.comment).font(.subheadline) }
+                if !r.response.isEmpty {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(L("Reactie ontwikkelaar")).font(.caption.weight(.semibold))
+                        Text(r.response).font(.caption)
+                    }
+                    .foregroundStyle(.secondary)
+                    .padding(10)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Theme.pill, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                }
+                if !r.version.isEmpty { Text("v\(r.version)").font(.caption2).foregroundStyle(.tertiary) }
+            }
+            .padding(.vertical, 4)
+        }
+        .listStyle(.plain)
+        .navigationTitle(L("Recensies"))
+        .navigationBarTitleDisplayMode(.inline)
     }
 }
 
 struct VersionHistoryView: View {
     let entries: [ChangelogEntry]
+    var installedVersion: String? = nil
+    /// When set (Homey Pro), each version gets an install button (to go back to it).
+    var onInstall: ((String) -> Void)? = nil
 
     var body: some View {
         List(entries) { e in
@@ -423,10 +646,19 @@ struct VersionHistoryView: View {
                         Text("TEST").font(.caption2.weight(.bold)).foregroundStyle(.white)
                             .padding(.horizontal, 6).padding(.vertical, 2).background(Theme.testOrange, in: Capsule())
                     }
+                    if e.version == installedVersion {
+                        Text(L("GEÏNSTALLEERD")).font(.caption2.weight(.bold)).foregroundStyle(Theme.accent)
+                    }
                     Spacer()
                     if let d = e.date { Text(d, format: .dateTime.day().month().year()).font(.subheadline).foregroundStyle(.secondary) }
                 }
                 if !e.text.isEmpty { Text(e.text).font(.subheadline) }
+                if let onInstall, e.version != installedVersion, e.state != "test" {
+                    Button(L("Installeer deze versie")) { onInstall(e.version) }
+                        .font(.footnote.weight(.semibold))
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                }
             }
             .padding(.vertical, 4)
         }
