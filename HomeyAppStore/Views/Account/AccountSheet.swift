@@ -120,6 +120,14 @@ struct AccountSheet: View {
                 }
 
                 Section {
+                    MoreAppsCard()
+                        .listRowInsets(EdgeInsets())
+                        .listRowBackground(Color.clear)
+                } header: {
+                    Text(MoreAppsText.current.section)
+                }
+
+                Section {
                     LabeledContent(L("Versie"), value: Config.appVersion)
                     LabeledContent(L("Build"), value: Config.appBuild)
                 } footer: {

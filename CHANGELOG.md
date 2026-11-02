@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.0.1 (build 0.0.7) — 2026-11-02
+
+### New
+- **"More apps from the developer"** card at the bottom of Account/settings (section "Ontdekken"), in the LRvdLinden house style (LR logo, accent blue `#2747E8` / `#8A9DFF` in dark mode). Opens https://lrvdlinden.app. Texts in 10 languages (nl, en, de, fr, es, it, sv, no, da, pl), following the app language.
+
 ## 1.0.1 (build 0.0.6) — 2026-10-15
 
 ### Fixed
